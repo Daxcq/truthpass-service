@@ -1,0 +1,11 @@
+{
+  "taskId": "task-tea-2026-001",
+  "serviceKind": "lab",
+  "capability": "batch-quality-check",
+  "batchId": "TEA-2026-001",
+  "productionTime": "2026-10-06T08:00:00Z",
+  "acceptance": {
+    "requireSignature": true,
+    "maxLogisticsGapHours": 6
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "truthpass-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "TruthPass: a service reliability and public reputation layer for white-label commerce Agents.",
+  "scripts": {
+    "demo": "tsx src/demo.ts",
+    "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}
