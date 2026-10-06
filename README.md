@@ -29,6 +29,8 @@ GitHub 仓库 slug 暂时保留为 `truthpass-service`，便于代码和英文�
 - BOT Chain 兼容的最小 `TrustRegistry` 合约草案；
 - 赛题映射、架构决策和 40 小时开发范围。
 
+最新燕窝 Demo 的完整架构见 [docs/architecture-v0.2-swallow-nest.md](docs/architecture-v0.2-swallow-nest.md)。
+
 ## 快速运行
 
 ```bash
