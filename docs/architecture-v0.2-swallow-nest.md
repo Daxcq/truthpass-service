@@ -1,4 +1,6 @@
-# 真验 v0.2：燕窝批次透明化 Demo 完整架构
+# 真验 v0.2：燕窝批次透明化 Demo 完整架构（历史方案）
+
+> 当前比赛 Demo 已切换为鱼油批次验收，详见 [../README.md](../README.md) 和 [fish-oil-development-plan.md](fish-oil-development-plan.md)。
 
 ## 1. 这次 Demo 的边界
 
