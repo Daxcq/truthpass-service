@@ -1,12 +1,14 @@
-# TruthPass 真验
+# 真验 Zhenyan
 
-TruthPass 是面向白牌电商采购 Agent 的服务可靠性与公共信誉层。
+真验是面向白牌电商采购 Agent 的服务可靠性与公共信誉层，英文标识沿用 `TruthPass`。
 
-比赛项目名建议使用：**TruthPass 真验：白牌商品公共信誉服务**。
+比赛项目名确定为：**真验：白牌商品公共信誉服务**。
 
-长期面向消费者的应用层可以使用产品名 **OpenGoods 透明货**，由 TruthPass 提供底层 API 或 Skill。
+长期面向消费者的应用层可以使用产品名 **OpenGoods 透明货**，由真验提供底层 API 或 Skill。
 
-当 Agent 需要调用陌生的供应商、检测、物流或售后服务时，TruthPass 会完成：
+GitHub 仓库 slug 暂时保留为 `truthpass-service`，便于代码和英文依赖命名。
+
+当 Agent 需要调用陌生的供应商、检测、物流或售后服务时，真验会完成：
 
 1. 读取服务身份和能力声明；
 2. 进行实时可用性探测和小型挑战任务；
