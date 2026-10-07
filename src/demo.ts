@@ -1,5 +1,6 @@
 import { ServiceRegistry } from "./registry.js";
 import { ConsumerParticipationRegistry } from "./consumer.js";
+import { runVerificationWorkflow } from "./orchestrator.js";
 import type { ServiceAdapter, ServiceCard, TaskRequest } from "./types.js";
 
 const task: TaskRequest = {
@@ -10,11 +11,8 @@ const task: TaskRequest = {
   productionTime: "2026-10-06T08:00:00Z",
   acceptance: {
     requireSignature: true,
-    maxLogisticsGapHours: 6,
-    minEpaDhaPercent: 70,
-    maxPeroxideValue: 5,
-    maxTotox: 20,
-    requireColdChain: true,
+    policyId: "fish-oil-quality",
+    policyVersion: "v1",
   },
 };
 
@@ -111,10 +109,14 @@ const services: Array<[ServiceCard, "valid" | "wrong-batch" | "offline"]> = [
 const registry = new ServiceRegistry();
 for (const [card, mode] of services) registry.register(card, adapterFor(card, mode));
 
-const ranked = await registry.evaluate(task);
-const winner = ranked[0];
-if (!winner?.verification) throw new Error("没有可验收的服务");
-const feedback = await registry.recordFeedback(winner.service.id, task, winner.verification);
+const workflow = await runVerificationWorkflow(task, registry, "2026-10-06T12:00:00Z");
+if (workflow.status !== "completed" || !workflow.selectedServiceId || !workflow.feedback) {
+  throw new Error("没有符合服务履约条件的服务");
+}
+const ranked = workflow.ranking;
+const winner = ranked.find((item) => item.service.id === workflow.selectedServiceId);
+const feedback = workflow.feedback;
+if (!winner) throw new Error("工作流选择的服务不在排名结果中");
 
 const consumers = new ConsumerParticipationRegistry();
 await consumers.grantConsent({
@@ -139,15 +141,17 @@ const consumerFeedback = await consumers.recordFeedback({
 
 console.log(JSON.stringify({
   task,
+  agentTrace: workflow.trace,
   ranking: ranked.map((item) => ({
     serviceId: item.service.id,
     liveStatus: item.probe.status,
     score: item.score,
-    accepted: item.verification?.status ?? "not-executed",
-    reasons: item.verification?.reasons ?? [item.probe.reason],
+    eligible: item.eligible,
+    serviceExecution: item.execution?.status ?? "not-executed",
+    productAssessment: item.product?.status ?? "not-evaluated",
+    reasons: [...(item.execution?.reasons ?? []), ...(item.product?.reasons ?? []), ...(item.probe.reason ? [item.probe.reason] : [])],
   })),
   selectedService: winner.service.id,
   feedback,
   consumerParticipation: { purchase, feedback: consumerFeedback },
 }, null, 2));
-

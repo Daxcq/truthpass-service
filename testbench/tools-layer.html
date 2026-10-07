@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>TruthPass 工具层测试台</title>
+  <style>
+    :root{--navy:#0f172a;--blue:#1e40af;--soft:#dbeafe;--ink:#1e3a8a;--muted:#475569;--line:#cbd5e1;--bg:#f8fafc;--green:#047857;--green-soft:#d1fae5;--red:#b91c1c;--red-soft:#fee2e2;font-family:"Fira Sans","Segoe UI",sans-serif}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--navy)}main{max-width:1120px;margin:0 auto;padding:32px 20px 56px}header{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;margin-bottom:24px}h1,h2,p{margin-top:0}h1{margin-bottom:8px;letter-spacing:-.03em}h2{font-size:18px}.eyebrow,.mono,pre{font-family:"Fira Code",Consolas,monospace}.eyebrow{font-size:12px;font-weight:700;letter-spacing:.1em;color:var(--blue)}.muted{color:var(--muted);line-height:1.6}.badge{background:var(--green-soft);color:var(--green);border-radius:999px;padding:6px 10px;font:700 12px "Fira Code",Consolas,monospace;white-space:nowrap}.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}.panel{grid-column:span 4;background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px;box-shadow:0 6px 20px rgb(15 23 42 / 5%)}.wide{grid-column:span 8}.full{grid-column:1/-1}.tool{display:flex;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px solid var(--line);font-size:13px}.tool:last-child{border-bottom:0}.tool code{color:var(--blue)}.ok{color:var(--green);font-weight:800}.bad{color:var(--red);font-weight:800}button{min-height:44px;border:0;border-radius:9px;padding:0 14px;background:var(--blue);color:#fff;font-weight:700;cursor:pointer}button.secondary{background:var(--soft);color:var(--blue)}button:hover{filter:brightness(1.08)}button:focus-visible{outline:3px solid #93c5fd;outline-offset:2px}.actions{display:flex;gap:10px;flex-wrap:wrap}pre{background:var(--navy);color:#dbeafe;border-radius:10px;padding:15px;min-height:150px;overflow:auto;font-size:12px;line-height:1.6}.role{display:inline-block;background:#eff6ff;color:var(--blue);padding:5px 8px;border-radius:999px;margin:3px;font:700 12px "Fira Code",Consolas,monospace}@media(max-width:800px){header{flex-direction:column}.panel,.wide{grid-column:1/-1}}
+  </style>
+</head>
+<body><main>
+<header><div><div class="eyebrow">TRUTHPASS · TOOL BOUNDARY TESTBENCH</div><h1>工具/API 边界测试台</h1><p class="muted">页面通过本机 HTTP 调用实际 TruthPassTools；仅使用本地 demo/synthetic fixture。</p></div><span class="badge">LOCAL HTTP · 127.0.0.1:4173</span></header>
+<section class="grid">
+<article class="panel"><h2>工具白名单</h2><div class="tool"><code>get_batch</code><span class="ok">允许</span></div><div class="tool"><code>get_evidence_view</code><span class="ok">允许</span></div><div class="tool"><code>get_policy</code><span class="ok">允许</span></div><div class="tool"><code>verify_service_execution</code><span class="ok">允许</span></div><div class="tool"><code>assess_product_batch</code><span class="ok">允许</span></div><div class="tool"><code>raw_sql</code><span class="bad">禁止</span></div><div class="tool"><code>write_contract_directly</code><span class="bad">禁止</span></div></article>
+<article class="panel wide"><h2>角色权限视图</h2><p class="muted">工具返回的是只读副本；角色不同，允许看到的 Evidence kind 不同。</p><div><span class="role">production → production</span><span class="role">inspection → inspection / cold_chain / shipment</span><span class="role">consumer_feedback → public evidence</span></div><div class="tool"><span>当前 batch</span><code>FO-2026-001</code></div><div class="tool"><span>Policy</span><code>fish-oil-quality@v1</code></div><div class="tool"><span>阈值修改</span><span class="bad">拒绝</span></div></article>
+<article class="panel full"><h2>交互验收场景</h2><p class="muted">每个按钮对应工具层自动化测试中的一个失败或成功边界。</p><div class="actions"><button onclick="run('production')">读取生产视图</button><button onclick="run('inspection')">读取检测视图</button><button onclick="run('consumer')">读取消费者视图</button><button onclick="run('assess')">真实规则验收</button><button class="secondary" onclick="run('role-upgrade')">尝试伪造角色</button><button class="secondary" onclick="run('unknown')">未知批次</button><button class="secondary" onclick="run('mismatch')">跨批次引用</button><button class="secondary" onclick="run('policy')">未知 Policy</button></div><pre id="console" aria-live="polite">等待工具调用……</pre></article>
+<article class="panel wide"><h2>工具返回示例</h2><pre id="json">{}</pre></article>
+<article class="panel"><h2>不允许的行为</h2><ul class="muted" style="padding-left:20px;line-height:1.8"><li>直接执行 SQL</li><li>传入自定义质量阈值</li><li>越权读取原始数据</li><li>修改 Repository 返回值</li></ul></article>
+</section></main>
+<script>
+async function callApi(path, init) {
+  const response = await fetch(path, init);
+  const body = await response.json();
+  return { httpStatus: response.status, ok: response.ok, body };
+}
+function show(tool, role, result) {
+  document.getElementById("console").textContent = JSON.stringify({ tool, role, ...result }, null, 2);
+  document.getElementById("json").textContent = JSON.stringify(result.body?.result ?? result.body, null, 2);
+}
+async function run(kind) {
+  const batchId = "FO-2026-001";
+  try {
+    if (["production", "inspection", "consumer"].includes(kind)) {
+      const role = kind === "consumer" ? "consumer_feedback" : kind;
+      return show("get_evidence_view", role, await callApi("/api/test/" + role + "/evidence?batchId=" + encodeURIComponent(batchId)));
+    }
+    if (kind === "assess") {
+      return show("verify + assess by evidenceId", "inspection", await callApi("/api/test/assess", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ evidenceId: "ev-test-report-001" }) }));
+    }
+    if (kind === "role-upgrade") {
+      return show("role binding test", "production; requested consumer_feedback", await callApi("/api/test/role-upgrade?batchId=" + encodeURIComponent(batchId) + "&role=consumer_feedback"));
+    }
+    if (kind === "unknown") return show("get_batch", "production", await callApi("/api/test/batch?batchId=FO-UNKNOWN"));
+    if (kind === "mismatch") return show("assess registered foreign-batch evidence", "inspection", await callApi("/api/test/assess-other-batch", { method: "POST" }));
+    return show("get_policy", "inspection", await callApi("/api/test/policy?policyId=caller-policy&policyVersion=v1"));
+  } catch (error) {
+    show("local HTTP testbench", kind, { ok: false, error: String(error) });
+  }
+}
+</script></body></html>
+

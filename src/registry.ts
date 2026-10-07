@@ -1,12 +1,13 @@
 import { sha256Hex } from "./hash.js";
-import { verifyExecution } from "./verifier.js";
+import { assessProductBatch, verifyServiceExecution } from "./verifier.js";
 import type {
   FeedbackRecord,
   ProbeResult,
   ServiceAdapter,
   ServiceCard,
   TaskRequest,
-  VerificationResult,
+  ProductBatchAssessment,
+  ServiceExecutionResult,
 } from "./types.js";
 
 interface RegisteredService {
@@ -17,7 +18,9 @@ interface RegisteredService {
 export interface RankedService {
   service: ServiceCard;
   probe: ProbeResult;
-  verification?: VerificationResult;
+  execution?: ServiceExecutionResult;
+  product?: ProductBatchAssessment;
+  eligible: boolean;
   score: number;
 }
 
@@ -37,26 +40,30 @@ export class ServiceRegistry {
     const ranked: RankedService[] = [];
     for (const candidate of candidates) {
       const probe = await candidate.adapter.probe(task);
-      let verification: VerificationResult | undefined;
+      let execution: ServiceExecutionResult | undefined;
+      let product: ProductBatchAssessment | undefined;
       if (probe.status !== "offline" && probe.capabilityMatch && probe.schemaValid) {
-        verification = await verifyExecution(task, await candidate.adapter.execute(task));
+        const evidence = await candidate.adapter.execute(task);
+        execution = await verifyServiceExecution(task, evidence);
+        product = await assessProductBatch(task, evidence);
       }
 
       const liveScore = probe.status === "healthy" ? 100 : probe.status === "degraded" ? 55 : 0;
-      const acceptanceScore = verification?.score ?? 0;
+      const acceptanceScore = execution?.score ?? 0;
       const score = Math.round(
         candidate.card.historicalScore * 0.25 + liveScore * 0.2 + acceptanceScore * 0.55,
       );
-      ranked.push({ service: candidate.card, probe, verification, score });
+      const eligible = execution?.status === "accepted";
+      ranked.push({ service: candidate.card, probe, execution, product, eligible, score });
     }
 
-    return ranked.sort((a, b) => b.score - a.score);
+    return ranked.sort((a, b) => Number(b.eligible) - Number(a.eligible) || b.score - a.score);
   }
 
   async recordFeedback(
     serviceId: string,
     task: TaskRequest,
-    result: VerificationResult,
+    result: ServiceExecutionResult,
     createdAt = new Date().toISOString(),
   ): Promise<FeedbackRecord> {
     const feedbackId = await sha256Hex(`${serviceId}:${task.taskId}:${result.evidenceHash}`);

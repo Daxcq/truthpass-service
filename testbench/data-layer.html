@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TruthPass 数据层测试台</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --navy: #0f172a;
+      --blue: #1e40af;
+      --blue-soft: #dbeafe;
+      --ink: #1e3a8a;
+      --muted: #475569;
+      --line: #cbd5e1;
+      --panel: #ffffff;
+      --canvas: #f8fafc;
+      --green: #047857;
+      --green-soft: #d1fae5;
+      --amber: #b45309;
+      --amber-soft: #fef3c7;
+      --red: #b91c1c;
+      --red-soft: #fee2e2;
+      font-family: "Fira Sans", "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--canvas); color: var(--navy); }
+    main { max-width: 1240px; margin: 0 auto; padding: 32px 20px 56px; }
+    header { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; margin-bottom: 28px; }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { margin-bottom: 10px; letter-spacing: -0.03em; }
+    h2 { font-size: 18px; margin-bottom: 14px; }
+    h3 { font-size: 15px; margin-bottom: 8px; }
+    .eyebrow, code, .mono { font-family: "Fira Code", Consolas, monospace; }
+    .eyebrow { color: var(--blue); font-size: 12px; font-weight: 700; letter-spacing: 0.1em; }
+    .muted { color: var(--muted); line-height: 1.6; }
+    .badge { display: inline-flex; padding: 6px 10px; border-radius: 999px; background: var(--green-soft); color: var(--green); font: 700 12px "Fira Code", Consolas, monospace; white-space: nowrap; }
+    .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; }
+    .panel { grid-column: span 4; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px; box-shadow: 0 6px 20px rgb(15 23 42 / 5%); }
+    .panel.wide { grid-column: span 8; }
+    .panel.full { grid-column: 1 / -1; }
+    .metric { font-size: 30px; font-weight: 800; color: var(--ink); }
+    .label { color: var(--muted); font-size: 13px; }
+    dl { display: grid; grid-template-columns: 130px 1fr; gap: 9px 12px; margin: 0; font-size: 13px; }
+    dt { color: var(--muted); }
+    dd { margin: 0; word-break: break-word; }
+    .status { display: flex; align-items: center; gap: 8px; font-weight: 700; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
+    .success { color: var(--green); }
+    .warning { color: var(--amber); }
+    .danger { color: var(--red); }
+    .neutral { color: var(--muted); }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 11px 10px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-size: 12px; font-weight: 700; }
+    tr:last-child td { border-bottom: 0; }
+    button { min-height: 44px; border: 0; border-radius: 9px; padding: 0 14px; background: var(--blue); color: white; font-weight: 700; cursor: pointer; }
+    button:hover { background: #1d4ed8; }
+    button:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
+    button.secondary { background: var(--blue-soft); color: var(--blue); }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; }
+    .notice { border-left: 4px solid var(--blue); background: #eff6ff; padding: 12px 14px; color: var(--ink); line-height: 1.6; }
+    .event { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+    .event:last-child { border-bottom: 0; }
+    .event-kind { min-width: 122px; font: 700 12px "Fira Code", Consolas, monospace; color: var(--blue); }
+    pre { margin: 0; max-height: 300px; overflow: auto; background: var(--navy); color: #dbeafe; border-radius: 10px; padding: 14px; font: 12px/1.6 "Fira Code", Consolas, monospace; }
+    #console { min-height: 76px; }
+    @media (max-width: 850px) {
+      header { flex-direction: column; }
+      .panel, .panel.wide { grid-column: 1 / -1; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <div class="eyebrow">TRUTHPASS · DATA LAYER TESTBENCH</div>
+      <h1>鱼油批次数据层验收台</h1>
+      <p class="muted">本页面只验证商品、批次和证据的结构与绑定关系，不执行任何 Agent 判断。</p>
+    </div>
+    <span class="badge">DATA-ONLY · demo/synthetic</span>
+  </header>
+
+  <section class="grid" aria-label="数据层概览">
+    <article class="panel">
+      <h2>商品 Product</h2>
+      <div class="metric">1</div><div class="label">已注册商品</div>
+      <dl style="margin-top:16px">
+        <dt>ID</dt><dd class="mono">fish-oil-demo-001</dd>
+        <dt>品类</dt><dd>fish-oil</dd>
+        <dt>供应方</dt><dd class="mono">supplier-demo-001</dd>
+        <dt>数据模式</dt><dd class="warning">demo/synthetic</dd>
+      </dl>
+    </article>
+    <article class="panel">
+      <h2>批次 Batch</h2>
+      <div class="metric">1</div><div class="label">已绑定商品的批次</div>
+      <dl style="margin-top:16px">
+        <dt>ID</dt><dd class="mono">FO-2026-001</dd>
+        <dt>灌装批次</dt><dd class="mono">FILL-2026-001</dd>
+        <dt>生产时间</dt><dd>2026-10-06 08:00 UTC</dd>
+        <dt>绑定状态</dt><dd class="success">product_id matched</dd>
+      </dl>
+    </article>
+    <article class="panel">
+      <h2>证据 Evidence</h2>
+      <div class="metric">3</div><div class="label">当前批次证据</div>
+      <dl style="margin-top:16px">
+        <dt>类型</dt><dd>production · inspection · cold_chain</dd>
+        <dt>状态</dt><dd class="success">全部 submitted</dd>
+        <dt>哈希</dt><dd>每条 payload 独立计算</dd>
+        <dt>下一层</dt><dd class="neutral">尚未进入 JEV</dd>
+      </dl>
+    </article>
+
+    <article class="panel wide">
+      <h2>证据时间线</h2>
+      <div class="event"><div class="event-kind">production</div><div><strong>ev-production-001</strong><div class="muted">厂家提交灌装批次和原料来源摘要 · 已绑定 FO-2026-001</div></div><span class="status success"><span class="dot"></span>合法</span></div>
+      <div class="event"><div class="event-kind">inspection</div><div><strong>ev-inspection-001</strong><div class="muted">第三方检测摘要 · payload 已生成 SHA-256</div></div><span class="status success"><span class="dot"></span>合法</span></div>
+      <div class="event"><div class="event-kind">cold_chain</div><div><strong>ev-cold-chain-001</strong><div class="muted">平台设备温度摘要 · 当前只作为原始证据存储</div></div><span class="status success"><span class="dot"></span>合法</span></div>
+    </article>
+
+    <article class="panel">
+      <h2>数据层边界</h2>
+      <div class="notice">通过不等于真实。当前只证明字段、ID、绑定关系和内容哈希符合数据层约束。</div>
+      <p class="muted" style="margin-top:14px">JEV、Agent Prompt、质量阈值和推荐判断将在后续阶段加入。</p>
+    </article>
+
+    <article class="panel full">
+      <h2>交互验收场景</h2>
+      <p class="muted">以下按钮模拟 Repository 的数据边界；真实自动化测试位于 <span class="mono">test/data.test.ts</span>。</p>
+      <div class="actions">
+        <button type="button" onclick="runScenario('valid')">验证有效链路</button>
+        <button type="button" class="secondary" onclick="runScenario('duplicate')">注入重复 evidence_id</button>
+        <button type="button" class="secondary" onclick="runScenario('unknown-batch')">注入未知 batch_id</button>
+        <button type="button" class="secondary" onclick="resetConsole()">清空结果</button>
+      </div>
+      <pre id="console" aria-live="polite">等待测试操作……</pre>
+    </article>
+
+    <article class="panel full">
+      <h2>当前 Canonical JSON 样本</h2>
+      <pre id="json-view"></pre>
+    </article>
+  </section>
+</main>
+<script>
+  const evidence = {
+    schemaVersion: "evidence.v1",
+    evidenceId: "ev-inspection-001",
+    batchId: "FO-2026-001",
+    kind: "inspection",
+    issuerId: "lab-demo-001",
+    sourceKind: "third_party",
+    occurredAt: "2026-10-06T10:20:00Z",
+    payload: { epaDhaPercent: 78, peroxideValue: 2.1, totox: 11, reportMode: "demo/synthetic" },
+    dataMode: "demo/synthetic"
+  };
+  document.getElementById("json-view").textContent = JSON.stringify(evidence, null, 2);
+  function runScenario(kind) {
+    const output = document.getElementById("console");
+    if (kind === "valid") {
+      output.textContent = JSON.stringify({ scenario: "valid", accepted: true, message: "evidence 已通过数据层校验并绑定 FO-2026-001" }, null, 2);
+      output.style.color = "#a7f3d0";
+      return;
+    }
+    if (kind === "duplicate") {
+      output.textContent = JSON.stringify({ scenario: "duplicate", accepted: false, error: "evidenceId 已存在", nextLayer: "blocked before JEV" }, null, 2);
+      output.style.color = "#fecaca";
+      return;
+    }
+    output.textContent = JSON.stringify({ scenario: "unknown-batch", accepted: false, error: "evidence 绑定的 batch 不存在", nextLayer: "blocked before JEV" }, null, 2);
+    output.style.color = "#fecaca";
+  }
+  function resetConsole() {
+    const output = document.getElementById("console");
+    output.textContent = "等待测试操作……";
+    output.style.color = "#dbeafe";
+  }
+</script>
+</body>
+</html>

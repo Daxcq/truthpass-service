@@ -7,7 +7,9 @@
   "scripts": {
     "demo": "tsx src/demo.ts",
     "test": "tsx --test test/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "verify": "npm test && npm run typecheck",
+    "testbench:tools": "tsx src/tools/testbench-server.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

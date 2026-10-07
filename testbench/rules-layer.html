@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TruthPass 确定性规则测试台</title>
+  <style>
+    :root { --navy:#0f172a; --blue:#1e40af; --soft:#dbeafe; --ink:#1e3a8a; --muted:#475569; --line:#cbd5e1; --bg:#f8fafc; --green:#047857; --green-soft:#d1fae5; --red:#b91c1c; --red-soft:#fee2e2; --amber:#b45309; --amber-soft:#fef3c7; font-family:"Fira Sans","Segoe UI",sans-serif; }
+    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--navy)} main{max-width:1180px;margin:0 auto;padding:32px 20px 56px} header{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;margin-bottom:24px} h1,h2,h3,p{margin-top:0} h1{margin-bottom:8px;letter-spacing:-.03em} h2{font-size:18px;margin-bottom:14px} h3{font-size:14px;margin-bottom:8px}.eyebrow,.mono,pre,code{font-family:"Fira Code",Consolas,monospace}.eyebrow{font-size:12px;font-weight:700;letter-spacing:.1em;color:var(--blue)}.muted{color:var(--muted);line-height:1.6}.badge{background:var(--green-soft);color:var(--green);border-radius:999px;padding:6px 10px;font:700 12px "Fira Code",Consolas,monospace;white-space:nowrap}.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}.panel{grid-column:span 4;background:white;border:1px solid var(--line);border-radius:14px;padding:18px;box-shadow:0 6px 20px rgb(15 23 42 / 5%)}.wide{grid-column:span 8}.full{grid-column:1/-1}.metric{font-size:30px;font-weight:800;color:var(--ink)}.label{font-size:13px;color:var(--muted)}dl{display:grid;grid-template-columns:150px 1fr;gap:9px 12px;font-size:13px}dt{color:var(--muted)}dd{margin:0}.rule{display:grid;grid-template-columns:1fr auto;gap:12px;padding:13px 0;border-bottom:1px solid var(--line)}.rule:last-child{border-bottom:0}.pass{color:var(--green)}.fail{color:var(--red)}.warn{color:var(--amber)}.status{font-weight:800}.chip{display:inline-block;border-radius:999px;padding:4px 8px;font:700 12px "Fira Code",Consolas,monospace}.chip.pass{background:var(--green-soft)}.chip.fail{background:var(--red-soft)}.chip.warn{background:var(--amber-soft)}button{min-height:44px;border:0;border-radius:9px;padding:0 14px;background:var(--blue);color:white;font-weight:700;cursor:pointer}button.secondary{background:var(--soft);color:var(--blue)}button:hover{filter:brightness(1.08)}button:focus-visible{outline:3px solid #93c5fd;outline-offset:2px}.actions{display:flex;flex-wrap:wrap;gap:10px}pre{background:var(--navy);color:#dbeafe;border-radius:10px;padding:15px;min-height:100px;overflow:auto;font-size:12px;line-height:1.6}.notice{border-left:4px solid var(--blue);background:#eff6ff;color:var(--ink);padding:12px 14px;line-height:1.6}@media(max-width:850px){header{flex-direction:column}.panel,.wide{grid-column:1/-1}}
+  </style>
+</head>
+<body>
+<main>
+  <header><div><div class="eyebrow">TRUTHPASS · DETERMINISTIC RULE TESTBENCH</div><h1>鱼油确定性规则测试台</h1><p class="muted">PolicySnapshot 驱动规则；Agent 和调用方不能修改阈值。</p></div><span class="badge">policy.snapshot.v1</span></header>
+  <section class="grid">
+    <article class="panel"><h2>PolicySnapshot</h2><div class="metric">v1</div><div class="label">fish-oil-quality</div><dl style="margin-top:16px"><dt>来源</dt><dd>team-approved-demo-rule</dd><dt>数据模式</dt><dd class="warn">demo/synthetic</dd><dt>EPA+DHA</dt><dd>≥ 70%</dd><dt>过氧化值</dt><dd>≤ 5</dd><dt>TOTOX</dt><dd>≤ 20</dd><dt>冷链中断</dt><dd>≤ 6 小时</dd></dl></article>
+    <article class="panel wide"><h2>规则职责边界</h2><div class="notice">服务履约和商品质量是两个结果。检测服务正确返回不合格报告时，服务可以 accepted，商品批次仍然 rejected。</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:18px"><div><h3>ServiceExecutionResult</h3><span class="chip pass">accepted</span><p class="muted">任务、批次、报告时间和签名满足服务交付约定。</p></div><div><h3>ProductBatchAssessment</h3><span class="chip fail">rejected</span><p class="muted">EPA+DHA、氧化指标或冷链不满足 PolicySnapshot。</p></div></div></article>
+    <article class="panel full"><h2>当前批次规则明细 · FO-2026-001</h2><div id="rules"></div></article>
+    <article class="panel wide"><h2>交互验收</h2><p class="muted">这些场景对应自动化规则测试，面板只负责可视化。</p><div class="actions"><button onclick="run('pass')">通过样本</button><button class="secondary" onclick="run('fail')">超标样本</button><button class="secondary" onclick="run('unknown')">未知 Policy</button><button class="secondary" onclick="run('service-only')">服务成功但商品失败</button></div><pre id="console" aria-live="polite">等待测试操作……</pre></article>
+    <article class="panel"><h2>硬拦截</h2><ul class="muted" style="padding-left:20px;line-height:1.8"><li>指标缺失</li><li>指标超标</li><li>冷链超时</li><li>未知 Policy</li><li>调用方降低阈值</li></ul></article>
+  </section>
+</main>
+<script>
+  const policy={id:"fish-oil-quality",version:"v1",epa:70,peroxide:5,totox:20,coldChain:6};
+  const samples={pass:{epa:78,peroxide:2.1,totox:11,coldChain:2},fail:{epa:61,peroxide:7.2,totox:26,coldChain:11}};
+  function render(sample){const p=samples[sample];const rows=[['EPA+DHA',p.epa,`≥ ${policy.epa}%`,p.epa>=policy.epa],['过氧化值',p.peroxide,`≤ ${policy.peroxide}`,p.peroxide<=policy.peroxide],['TOTOX',p.totox,`≤ ${policy.totox}`,p.totox<=policy.totox],['冷链中断',p.coldChain,`≤ ${policy.coldChain} 小时`,p.coldChain<=policy.coldChain]];document.getElementById('rules').innerHTML=rows.map(r=>`<div class="rule"><div><strong>${r[0]}</strong><div class="muted">实测 ${r[1]} · 规则 ${r[2]}</div></div><span class="chip ${r[3]?'pass':'fail'}">${r[3]?'PASS':'FAIL'}</span></div>`).join('');}
+  function run(kind){const out=document.getElementById('console');if(kind==='pass'){render('pass');out.textContent=JSON.stringify({policyId:policy.id,policyVersion:policy.version,status:'accepted',score:100},null,2);return}if(kind==='fail'){render('fail');out.textContent=JSON.stringify({policyId:policy.id,policyVersion:policy.version,status:'rejected',reasons:['EPA+DHA 未达标','过氧化值超标','TOTOX 超标','冷链超时']},null,2);return}if(kind==='unknown'){out.textContent=JSON.stringify({status:'blocked',error:'未知或未批准的 policy'},null,2);return}render('fail');out.textContent=JSON.stringify({serviceExecution:'accepted',productBatchAssessment:'rejected',reason:'服务正确报告商品指标不合格'},null,2);}
+  render('pass');
+</script>
+</body>
+</html>

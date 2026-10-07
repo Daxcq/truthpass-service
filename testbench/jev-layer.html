@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TruthPass JEV 语义层测试台</title>
+  <style>
+    :root { --navy:#0f172a; --blue:#1e40af; --soft:#dbeafe; --ink:#1e3a8a; --muted:#475569; --line:#cbd5e1; --bg:#f8fafc; --green:#047857; font-family:"Fira Sans","Segoe UI",sans-serif; }
+    * { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--navy); } main { max-width:1100px; margin:0 auto; padding:32px 20px 56px; }
+    header { display:flex; justify-content:space-between; gap:20px; align-items:flex-start; margin-bottom:24px; } h1,h2,p { margin-top:0; } h1 { margin-bottom:8px; letter-spacing:-.03em; } h2 { font-size:18px; }
+    .eyebrow, .mono, code, pre { font-family:"Fira Code",Consolas,monospace; } .eyebrow { color:var(--blue); font-size:12px; font-weight:700; letter-spacing:.1em; } .muted { color:var(--muted); line-height:1.6; }
+    .badge { background:#d1fae5; color:var(--green); border-radius:999px; padding:6px 10px; font:700 12px "Fira Code",Consolas,monospace; white-space:nowrap; }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; } .panel { background:white; border:1px solid var(--line); border-radius:14px; padding:18px; box-shadow:0 6px 20px rgb(15 23 42 / 5%); } .wide { grid-column:1 / -1; }
+    .flow { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:16px 0; } .step { background:var(--soft); color:var(--blue); border-radius:8px; padding:9px 12px; font-weight:700; font-size:13px; } .arrow { color:var(--muted); }
+    .tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; } button { min-height:44px; border:0; border-radius:9px; padding:0 14px; background:var(--soft); color:var(--blue); font-weight:700; cursor:pointer; } button.active, button:hover { background:var(--blue); color:white; } button:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
+    pre { background:var(--navy); color:#dbeafe; border-radius:10px; padding:16px; overflow:auto; min-height:280px; font-size:12px; line-height:1.6; } .pill { display:inline-block; padding:4px 8px; border-radius:999px; background:#eff6ff; color:var(--blue); font:600 12px "Fira Code",Consolas,monospace; margin:3px; }
+    ul { margin:0; padding-left:20px; color:var(--muted); line-height:1.8; } @media(max-width:720px){ header{flex-direction:column}.grid{grid-template-columns:1fr}.wide{grid-column:auto} }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div><div class="eyebrow">TRUTHPASS · JEV SEMANTIC TESTBENCH</div><h1>JEV 语义层测试台</h1><p class="muted">同一份鱼油批次事实，生成不同角色的只读语义视图。这里不运行 LLM，也不做真假判断。</p></div>
+    <span class="badge">jev.context.v1 · read-only</span>
+  </header>
+  <section class="panel wide">
+    <h2>唯一事实源到角色视图</h2>
+    <div class="flow"><span class="step">Canonical Evidence JSON</span><span class="arrow">→</span><span class="step">JEV Context</span><span class="arrow">→</span><span class="step">Role View</span><span class="arrow">→</span><span class="step">未来 Agent Prompt</span></div>
+    <p class="muted">事实源：<span class="mono">FO-2026-001</span> · 证据总数：3 · 数据模式：<span class="mono">demo/synthetic</span></p>
+  </section>
+  <section class="grid" style="margin-top:16px">
+    <article class="panel"><h2>JEV 语义关系</h2><ul><li>Product → Batch</li><li>Batch → production evidence</li><li>Batch → inspection evidence</li><li>Batch → cold-chain evidence</li><li>所有视图保留 evidence_id</li><li>视图过滤不会修改事实源</li></ul><div style="margin-top:14px"><span class="pill">product</span><span class="pill">batch</span><span class="pill">evidence</span><span class="pill">source_kind</span></div></article>
+    <article class="panel"><h2>角色可见范围</h2><ul><li><strong>production</strong>：只看 production</li><li><strong>inspection</strong>：看 inspection / cold_chain / shipment</li><li><strong>consumer_feedback</strong>：看当前批次全部公共证据</li></ul><p class="muted" style="margin-top:14px">这是数据视图边界，不是 Agent 的最终结论。</p></article>
+    <article class="panel wide"><h2>切换角色视图</h2><div class="tabs"><button class="active" data-role="production">生产视图</button><button data-role="inspection">检测视图</button><button data-role="consumer_feedback">消费者视图</button></div><pre id="json" aria-live="polite"></pre></article>
+  </section>
+</main>
+<script>
+  const context = { schemaVersion:"jev.context.v1", entity:"fish_oil_batch", product:{productId:"fish-oil-demo-001",category:"fish-oil"}, batch:{batchId:"FO-2026-001",fillingBatchId:"FILL-2026-001"}, claims:["高浓度 EPA+DHA","冷链交付"], evidence:[{evidenceId:"ev-production-001",kind:"production",payload:{fillingBatchId:"FILL-2026-001"},payloadHash:"sha256:..."},{evidenceId:"ev-inspection-001",kind:"inspection",payload:{epaDhaPercent:78,peroxideValue:2.1,totox:11},payloadHash:"sha256:..."},{evidenceId:"ev-cold-chain-001",kind:"cold_chain",payload:{maxGapHours:2},payloadHash:"sha256:..."}]};
+  const kinds = {production:["production"],inspection:["inspection","cold_chain","shipment"],consumer_feedback:["production","inspection","cold_chain","shipment","purchase","consumer_feedback"]};
+  const json = document.getElementById("json");
+  function render(role){ const view={schemaVersion:"jev.view.v1",role,allowedEvidenceKinds:kinds[role],context:{...context,evidence:context.evidence.filter(e=>kinds[role].includes(e.kind))}}; json.textContent=JSON.stringify(view,null,2); document.querySelectorAll("button[data-role]").forEach(b=>b.classList.toggle("active",b.dataset.role===role)); }
+  document.querySelectorAll("button[data-role]").forEach(button=>button.addEventListener("click",()=>render(button.dataset.role)));
+  render("production");
+</script>
+</body>
+</html>

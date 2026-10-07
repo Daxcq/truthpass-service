@@ -1,6 +1,7 @@
 export type ServiceKind = "supplier" | "lab" | "logistics" | "after-sales";
 export type ProbeStatus = "healthy" | "degraded" | "offline";
-export type VerificationStatus = "accepted" | "rejected" | "partial";
+export type ServiceExecutionStatus = "accepted" | "rejected";
+export type ProductAssessmentStatus = "accepted" | "rejected" | "not_evaluated";
 
 export interface ServiceCard {
   id: string;
@@ -21,11 +22,8 @@ export interface TaskRequest {
   productionTime: string;
   acceptance: {
     requireSignature: boolean;
-    maxLogisticsGapHours: number;
-    minEpaDhaPercent?: number;
-    maxPeroxideValue?: number;
-    maxTotox?: number;
-    requireColdChain?: boolean;
+    policyId: string;
+    policyVersion: string;
   };
 }
 
@@ -56,8 +54,18 @@ export interface ExecutionEvidence {
   payload: Record<string, unknown>;
 }
 
-export interface VerificationResult {
-  status: VerificationStatus;
+export interface ServiceExecutionResult {
+  status: ServiceExecutionStatus;
+  score: number;
+  checks: Record<string, boolean>;
+  reasons: string[];
+  evidenceHash: string;
+}
+
+export interface ProductBatchAssessment {
+  status: ProductAssessmentStatus;
+  policyId: string;
+  policyVersion: string;
   score: number;
   checks: Record<string, boolean>;
   reasons: string[];
