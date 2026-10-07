@@ -1,7 +1,7 @@
 import { sha256Hex } from "../hash.js";
 import { canonicalJson } from "./canonical.js";
-import type { BatchRecord, EvidenceRecord, NewEvidenceRecord, ProductRecord } from "./model.js";
-import { validateBatch, validateEvidence, validateProduct } from "./validation.js";
+import type { BatchRecord, EvidenceRecord, NewEvidenceRecord, ProductRecord, ProductionEvent } from "./model.js";
+import { validateBatch, validateEvidence, validateProduct, validateProductionEvent } from "./validation.js";
 
 export class MemoryDataRepository {
   private readonly products = new Map<string, ProductRecord>();
@@ -29,6 +29,15 @@ export class MemoryDataRepository {
     assertValid(validateEvidence(input));
     if (!this.batches.has(input.batchId)) throw new Error("evidence 绑定的 batch 不存在");
     if (this.evidence.has(input.evidenceId)) throw new Error("evidenceId 已存在");
+    if (input.kind === "production") {
+      const event = input.payload as unknown as ProductionEvent;
+      assertValid(validateProductionEvent(event));
+      for (const sourceEvidenceId of event.sourceEvidenceIds) {
+        const source = this.evidence.get(sourceEvidenceId);
+        if (!source) throw new Error("sourceEvidenceId " + sourceEvidenceId + " 不存在");
+        if (source.batchId !== input.batchId) throw new Error("sourceEvidenceId " + sourceEvidenceId + " 不属于同一批次");
+      }
+    }
     const record: EvidenceRecord = {
       ...input,
       payloadHash: await sha256Hex(canonicalJson(input.payload)),
@@ -59,6 +68,13 @@ export class MemoryDataRepository {
     return [...this.evidence.values()]
       .filter((record) => record.batchId === batchId)
       .map((record) => structuredClone(record));
+  }
+
+  revokeEvidence(evidenceId: string): boolean {
+    const evidence = this.evidence.get(evidenceId);
+    if (!evidence || evidence.status === "revoked") return false;
+    evidence.status = "revoked";
+    return true;
   }
 }
 

@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { MemoryDataRepository } from "./src/data/repository.js";
 import { fishOilBatch, fishOilEvidence, fishOilProduct } from "./src/data/fixtures.js";
 import { getPolicySnapshot } from "./src/rules/policy.js";
+import { assessProductionBatch } from "./src/production.js";
 import { ServiceRegistry } from "./src/registry.js";
 import { ConsumerParticipationRegistry } from "./src/consumer.js";
 import { TruthPassTools } from "./src/tools/truthpass-tools.js";
@@ -29,6 +30,7 @@ const repository = new MemoryDataRepository();
 repository.createProduct(fishOilProduct);
 repository.createBatch(fishOilBatch);
 for (const item of fishOilEvidence) await repository.addEvidence(item);
+const productionAssessment = await assessProductionBatch(repository, BATCH_ID);
 
 // 补一条结构完整的 inspection 证据，供确定性验收使用（对齐 testbench 的做法）。
 await repository.addEvidence({
@@ -66,7 +68,7 @@ const inspectionEvidence = repository.getEvidence("ev-test-report-001")!;
 const trustedIssuerKeys = new TrustedIssuerKeyRegistry(
   JSON.parse(process.env.TRUTHPASS_TRUSTED_ISSUER_KEYS ?? "[]") as TrustedIssuerPublicKey[],
 );
-const inspectionTools = new TruthPassTools(repository, "inspection", trustedIssuerKeys.resolve);
+const inspectionTools = new TruthPassTools(repository, "inspection", trustedIssuerKeys.resolve, true);
 
 const policy = getPolicySnapshot(task.acceptance.policyId, task.acceptance.policyVersion);
 const assessment = await inspectionTools.assessProductBatch({ task, evidenceId: "ev-test-report-001" });
@@ -130,8 +132,8 @@ const services: Array<[ServiceCard, "valid" | "wrong-batch" | "offline"]> = [
   ],
 ];
 
-const registry = new ServiceRegistry();
-for (const [card, mode] of services) registry.register(card, adapterFor(card, mode));
+const registry = new ServiceRegistry(trustedIssuerKeys.resolve);
+for (const [card, mode] of services) registry.register(card, adapterFor(card, mode), "demo/synthetic");
 
 // ---------- 消费者共建 ----------
 const consumers = new ConsumerParticipationRegistry();
@@ -277,6 +279,7 @@ async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): P
         summary: assessment.status === "accepted" ? "基于多源证据的综合判断" : assessment.reasons[0],
         scope: `${BATCH_ID} 批次及当前公开的规则 ${policy.version}`,
       },
+      productionAssessment,
       keyMetrics: METRIC_VIEWS,
     });
     return true;
@@ -284,6 +287,11 @@ async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): P
 
   if (p === "/api/products/FO-2026-001/evidence-link" && req.method === "GET") {
     sendJson(res, 200, EVIDENCE_STEPS);
+    return true;
+  }
+
+  if (p === "/api/products/FO-2026-001/production" && req.method === "GET") {
+    sendJson(res, 200, productionAssessment);
     return true;
   }
 

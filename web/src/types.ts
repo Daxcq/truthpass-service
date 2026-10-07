@@ -83,3 +83,21 @@ export interface ChatLine {
   cls: ChatLineClass;
   text: string;
 }
+
+export interface JevChoiceAnswer {
+  type: "choice";
+  choice: string;
+  confidence: number;
+  probabilities: Record<string, number>;
+}
+
+export interface JevDetection {
+  source: "TypeSafe JEV";
+  model: string;
+  answers: {
+    route: JevChoiceAnswer;
+    evidence_scope: JevChoiceAnswer;
+  };
+  usage: { input_tokens: number; output_tokens: number };
+  deterministicVerifier: { status: "accepted"; policy: string };
+}

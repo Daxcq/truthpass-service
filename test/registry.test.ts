@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { generateKeyPairSync, sign } from "node:crypto";
 import test from "node:test";
 import { ServiceRegistry } from "../src/registry.js";
-import type { ServiceAdapter, ServiceCard, TaskRequest } from "../src/types.js";
+import type { ExecutionEvidence, ServiceAdapter, ServiceCard, TaskRequest } from "../src/types.js";
+import { executionEvidenceSigningPayload, TrustedIssuerKeyRegistry } from "../src/security/evidence-signatures.js";
 
 const task: TaskRequest = {
   taskId: "route-task",
@@ -61,8 +63,8 @@ test("filters failed service execution before ranking", async () => {
   const registry = new ServiceRegistry();
   const historicallyTrusted = card("historically-trusted", 99);
   const valid = card("valid", 70);
-  registry.register(historicallyTrusted, adapter(historicallyTrusted, "FO-other"));
-  registry.register(valid, adapter(valid, "FO-1"));
+  registry.register(historicallyTrusted, adapter(historicallyTrusted, "FO-other"), "demo/synthetic");
+  registry.register(valid, adapter(valid, "FO-1"), "demo/synthetic");
 
   const ranked = await registry.evaluate(task);
 
@@ -75,11 +77,50 @@ test("filters failed service execution before ranking", async () => {
 test("does not mark a service eligible when product assessment fails", async () => {
   const registry = new ServiceRegistry();
   const service = card("bad-product", 99);
-  registry.register(service, adapter(service, "FO-1", false));
+  registry.register(service, adapter(service, "FO-1", false), "demo/synthetic");
 
   const [result] = await registry.evaluate(task);
 
   assert.equal(result?.execution?.status, "accepted");
   assert.equal(result?.product?.status, "rejected");
   assert.equal(result?.eligible, false);
+});
+
+test("rejects an external service that only claims its signature is valid", async () => {
+  const registry = new ServiceRegistry();
+  const service = card("external-lab", 99);
+  registry.register(service, adapter(service, "FO-1"));
+
+  const [result] = await registry.evaluate(task);
+
+  assert.equal(result?.execution?.checks.signatureValid, false);
+  assert.equal(result?.eligible, false);
+});
+
+test("accepts external service evidence only after issuer signature verification", async () => {
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  const keyId = "external-lab-key-1";
+  const evidence: ExecutionEvidence = {
+    serviceId: "external-lab", taskId: task.taskId, batchId: task.batchId, reportBatchId: task.batchId,
+    productionTime: task.productionTime, reportTime: "2026-10-06T10:00:00Z", logisticsGapHours: 1,
+    signatureValid: true, epaDhaPercent: 78, peroxideValue: 2, totox: 10, coldChainGapHours: 1,
+    payload: { report: "lab report" },
+  };
+  const signature = sign(null, Buffer.from(executionEvidenceSigningPayload(evidence, keyId)), privateKey).toString("base64");
+  const signedEvidence = { ...evidence, attestation: { algorithm: "Ed25519" as const, keyId, signature } };
+  const service = card("external-lab", 90);
+  const adapter: ServiceAdapter = {
+    async probe() { return { serviceId: service.id, status: "healthy", latencyMs: 1, capabilityMatch: true, schemaValid: true, checkedAt: "2026-10-06T08:00:00Z" }; },
+    async execute() { return signedEvidence; },
+  };
+  const keys = new TrustedIssuerKeyRegistry([{
+    issuerId: service.id, keyId, publicKeyPem: publicKey.export({ type: "spki", format: "pem" }).toString(),
+  }]);
+  const registry = new ServiceRegistry(keys.resolve);
+  registry.register(service, adapter, "external");
+
+  const [result] = await registry.evaluate(task);
+
+  assert.equal(result?.execution?.checks.signatureValid, true);
+  assert.equal(result?.eligible, true);
 });

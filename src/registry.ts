@@ -8,11 +8,15 @@ import type {
   TaskRequest,
   ProductBatchAssessment,
   ServiceExecutionResult,
+  EvidenceMode,
+  SignatureVerification,
 } from "./types.js";
+import { verifyExecutionEvidenceAttestation, type TrustedIssuerKeyResolver } from "./security/evidence-signatures.js";
 
 interface RegisteredService {
   card: ServiceCard;
   adapter: ServiceAdapter;
+  evidenceMode: EvidenceMode;
 }
 
 export interface RankedService {
@@ -27,9 +31,14 @@ export interface RankedService {
 export class ServiceRegistry {
   private readonly services = new Map<string, RegisteredService>();
   private readonly feedback = new Map<string, FeedbackRecord>();
+  private readonly resolveTrustedKey?: TrustedIssuerKeyResolver;
 
-  register(card: ServiceCard, adapter: ServiceAdapter): void {
-    this.services.set(card.id, { card, adapter });
+  constructor(resolveTrustedKey?: TrustedIssuerKeyResolver) {
+    this.resolveTrustedKey = resolveTrustedKey;
+  }
+
+  register(card: ServiceCard, adapter: ServiceAdapter, evidenceMode: EvidenceMode = "external"): void {
+    this.services.set(card.id, { card, adapter, evidenceMode });
   }
 
   async evaluate(task: TaskRequest): Promise<RankedService[]> {
@@ -44,7 +53,12 @@ export class ServiceRegistry {
       let product: ProductBatchAssessment | undefined;
       if (probe.status !== "offline" && probe.capabilityMatch && probe.schemaValid) {
         const evidence = await candidate.adapter.execute(task);
-        execution = await verifyServiceExecution(task, evidence);
+        const signatureVerification = evidence.serviceId !== candidate.card.id
+          ? "invalid"
+          : candidate.evidenceMode === "demo/synthetic"
+            ? evidence.signatureValid === true ? "demo" : "invalid"
+            : this.resolveTrustedKey && verifyExecutionEvidenceAttestation(evidence, this.resolveTrustedKey) ? "verified" : "invalid";
+        execution = await verifyServiceExecution(task, evidence, signatureVerification);
         product = await assessProductBatch(task, evidence);
       }
 

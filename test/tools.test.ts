@@ -56,7 +56,7 @@ async function setup(role: JevRole = "inspection", includeTaskReport = false): P
       },
     });
   }
-  return new TruthPassTools(repository, role);
+  return new TruthPassTools(repository, role, undefined, true);
 }
 
 const task: TaskRequest = {
@@ -80,9 +80,9 @@ test("tools expose role-specific read-only evidence views", async () => {
   const inspection = (await setup("inspection")).getEvidenceView({ batchId: task.batchId });
   const consumer = (await setup("consumer_feedback")).getEvidenceView({ batchId: task.batchId });
 
-  assert.deepEqual(production.context.evidence.map((item) => item.kind), ["production"]);
+  assert.deepEqual(production.context.evidence.map((item) => item.kind), ["production", "production"]);
   assert.deepEqual(inspection.context.evidence.map((item) => item.kind), ["inspection", "cold_chain"]);
-  assert.equal(consumer.context.evidence.length, 3);
+  assert.equal(consumer.context.evidence.length, 4);
   production.context.batch.batchId = "tampered";
   assert.equal(productionTools.getBatch({ batchId: task.batchId }).batchId, task.batchId);
 });
@@ -98,7 +98,7 @@ test("role is fixed when tools are created and cannot be upgraded per call", asy
   const forgedCall = productionTools.getEvidenceView as unknown as (input: { batchId: string }, role: string) => ReturnType<typeof productionTools.getEvidenceView>;
   const view = forgedCall.call(productionTools, { batchId: task.batchId }, "consumer_feedback");
 
-  assert.deepEqual(view.context.evidence.map((item) => item.kind), ["production"]);
+  assert.deepEqual(view.context.evidence.map((item) => item.kind), ["production", "production"]);
 });
 
 test("only the inspection role can invoke deterministic assessment tools", async () => {
@@ -168,7 +168,7 @@ test("assessment tools reject unregistered evidence kinds and malformed numeric 
     dataMode: "demo/synthetic",
     payload: { taskId: task.taskId, reportBatchId: task.batchId, logisticsGapHours: Number.NaN, signatureValid: true },
   });
-  const malformedTools = new TruthPassTools(repository, "inspection");
+  const malformedTools = new TruthPassTools(repository, "inspection", undefined, true);
   await assert.rejects(
     () => malformedTools.assessProductBatch({ task, evidenceId: "ev-malformed-report" }),
     (error) => error instanceof ToolBoundaryError && error.code === "EVIDENCE_PAYLOAD_INVALID",
@@ -193,6 +193,23 @@ test("tools reject external evidence without a trusted cryptographic signature",
   const tools = new TruthPassTools(repository, "inspection");
   await assert.rejects(
     () => tools.assessProductBatch({ task, evidenceId: "ev-external-unverified" }),
+    (error) => error instanceof ToolBoundaryError && error.code === "EVIDENCE_SIGNATURE_INVALID",
+  );
+});
+
+test("demo evidence markers are not trusted unless the server explicitly enables demo mode", async () => {
+  const repository = new MemoryDataRepository();
+  repository.createProduct(fishOilProduct);
+  repository.createBatch(fishOilBatch);
+  await repository.addEvidence({
+    schemaVersion: "evidence.v1", evidenceId: "ev-untrusted-demo-flag", batchId: task.batchId, kind: "inspection",
+    issuerId: "lab-demo-001", sourceKind: "third_party", occurredAt: "2026-10-06T10:00:00Z", dataMode: "demo/synthetic",
+    payload: { taskId: task.taskId, reportBatchId: task.batchId, logisticsGapHours: 1, signatureValid: true, epaDhaPercent: 78, peroxideValue: 2, totox: 10, coldChainGapHours: 1 },
+  });
+  const tools = new TruthPassTools(repository, "inspection");
+
+  await assert.rejects(
+    () => tools.assessProductBatch({ task, evidenceId: "ev-untrusted-demo-flag" }),
     (error) => error instanceof ToolBoundaryError && error.code === "EVIDENCE_SIGNATURE_INVALID",
   );
 });

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { fetchObserver, type ObserverServiceView } from "../api";
+import { fetchJevDetection, fetchObserver, type ObserverServiceView } from "../api";
 
 const LIVE_TEXT: Record<ObserverServiceView["live"], string> = {
   degraded: "降级",
@@ -23,13 +23,12 @@ const VERDICT_CLASS: Record<ObserverServiceView["verdict"], string> = {
 };
 
 export function ObserverDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { data, isLoading } = useQuery({
-    queryKey: ["observer"],
-    queryFn: fetchObserver,
-    enabled: open,
-  });
-
+  const { data, isLoading } = useQuery({ queryKey: ["observer"], queryFn: fetchObserver, enabled: open });
+  const jev = useQuery({ queryKey: ["jev-detection"], queryFn: fetchJevDetection, enabled: open });
+  const route = jev.data?.answers.route;
+  const scope = jev.data?.answers.evidence_scope;
   if (!open) return null;
+
   return (
     <>
       <div className="drawer-scrim" onClick={onClose} />
@@ -39,48 +38,45 @@ export function ObserverDrawer({ open, onClose }: { open: boolean; onClose: () =
             <p className="eyebrow">JUDGE OBSERVER MODE</p>
             <h2>系统观察台</h2>
           </div>
-          <button className="close-button" onClick={onClose} aria-label="关闭">
-            ×
-          </button>
+          <button className="close-button" onClick={onClose} aria-label="关闭">×</button>
         </div>
         <p className="drawer-intro">网页只是同一条 CLI 验证链的可视化投影。每一步都可以回到事件、规则和哈希。</p>
         {isLoading || !data ? (
           <p style={{ color: "var(--muted)" }}>正在读取服务与验收状态…</p>
         ) : (
           <>
-            <div className="observer-row">
-              <span>当前验证任务</span>
-              <strong>{data.task}</strong>
-            </div>
-            <div className="observer-row">
-              <span>规则集</span>
-              <strong>{data.policy}</strong>
-            </div>
+            <div className="observer-row"><span>当前验证任务</span><strong>{data.task}</strong></div>
+            <div className="observer-row"><span>规则集</span><strong>{data.policy}</strong></div>
             <div className="observer-row">
               <span>JEV 决策门</span>
-              <strong>{data.jev}</strong>
+              <strong>{jev.isLoading ? "调用 TypeSafe…" : jev.isError ? "调用失败" : (route?.choice ?? data.jev) + " · " + (route?.confidence ?? 0).toFixed(2)}</strong>
             </div>
-            <div className="observer-row">
-              <span>证据根哈希</span>
-              <strong>{data.evidenceRoot}</strong>
-            </div>
-            <div className="observer-row">
-              <span>链上状态</span>
-              <strong className="green-text">{data.chainStatus}</strong>
-            </div>
-            <div className="service-table">
-              <div className="table-head">
-                <span>服务</span>
-                <span>历史</span>
-                <span>当前</span>
-                <span>本次</span>
+            <div className="jev-live-result" aria-label="TypeSafe JEV 检测结果">
+              <div className="jev-live-head">
+                <span>实时检测结果</span>
+                <span className={jev.isError ? "red-text" : "green-text"}>{jev.isLoading ? "请求中" : jev.isError ? "不可用" : "已返回"}</span>
               </div>
-              {data.services.map((s) => (
-                <div key={s.id}>
-                  <span>{s.id}</span>
-                  <span>{s.history}</span>
-                  <span className={LIVE_CLASS[s.live]}>{LIVE_TEXT[s.live]}</span>
-                  <span className={VERDICT_CLASS[s.verdict]}>{VERDICT_TEXT[s.verdict]}</span>
+              {jev.isError && <p>TypeSafe 请求失败，请检查服务端配置的 TYPESAFE_API_KEY。</p>}
+              {jev.data && (
+                <>
+                  <div className="observer-row"><span>模型</span><strong>{jev.data.model}</strong></div>
+                  <div className="observer-row"><span>证据路由</span><strong>{route?.choice}</strong></div>
+                  <div className="observer-row"><span>证据覆盖</span><strong>{scope?.choice}</strong></div>
+                  <div className="observer-row"><span>确定性验收</span><strong className="green-text">{jev.data.deterministicVerifier.status}</strong></div>
+                  <details><summary>查看结构化返回</summary><pre>{JSON.stringify(jev.data.answers, null, 2)}</pre></details>
+                </>
+              )}
+            </div>
+            <div className="observer-row"><span>证据根哈希</span><strong>{data.evidenceRoot}</strong></div>
+            <div className="observer-row"><span>链上状态</span><strong className="green-text">{data.chainStatus}</strong></div>
+            <div className="service-table">
+              <div className="table-head"><span>服务</span><span>历史</span><span>当前</span><span>本次</span></div>
+              {data.services.map((service) => (
+                <div key={service.id}>
+                  <span>{service.id}</span>
+                  <span>{service.history}</span>
+                  <span className={LIVE_CLASS[service.live]}>{LIVE_TEXT[service.live]}</span>
+                  <span className={VERDICT_CLASS[service.verdict]}>{VERDICT_TEXT[service.verdict]}</span>
                 </div>
               ))}
             </div>

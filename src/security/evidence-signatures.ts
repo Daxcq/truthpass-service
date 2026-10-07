@@ -1,6 +1,7 @@
 import { createPublicKey, verify } from "node:crypto";
 import { canonicalJson } from "../data/canonical.js";
 import type { EvidenceRecord } from "../data/model.js";
+import type { ExecutionEvidence } from "../types.js";
 
 export type TrustedIssuerKeyResolver = (issuerId: string, keyId: string) => string | undefined;
 
@@ -68,6 +69,44 @@ export function verifyEvidenceAttestation(evidence: EvidenceRecord, resolveTrust
     return verify(
       null,
       Buffer.from(evidenceSigningPayload(evidence, attestation.keyId)),
+      createPublicKey(publicKey),
+      Buffer.from(attestation.signature, "base64"),
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function executionEvidenceSigningPayload(evidence: ExecutionEvidence, keyId: string): string {
+  return canonicalJson({
+    schemaVersion: "execution.evidence.v1",
+    evidenceMode: "external",
+    serviceId: evidence.serviceId,
+    taskId: evidence.taskId,
+    batchId: evidence.batchId,
+    reportBatchId: evidence.reportBatchId,
+    productionTime: evidence.productionTime,
+    reportTime: evidence.reportTime,
+    logisticsGapHours: evidence.logisticsGapHours,
+    epaDhaPercent: evidence.epaDhaPercent,
+    peroxideValue: evidence.peroxideValue,
+    totox: evidence.totox,
+    coldChainGapHours: evidence.coldChainGapHours,
+    payload: evidence.payload,
+    keyId,
+  });
+}
+
+export function verifyExecutionEvidenceAttestation(evidence: ExecutionEvidence, resolveTrustedKey: TrustedIssuerKeyResolver): boolean {
+  const attestation = evidence.attestation;
+  if (!attestation || attestation.algorithm !== "Ed25519" || !attestation.keyId) return false;
+
+  try {
+    const publicKey = resolveTrustedKey(evidence.serviceId, attestation.keyId);
+    if (!publicKey) return false;
+    return verify(
+      null,
+      Buffer.from(executionEvidenceSigningPayload(evidence, attestation.keyId)),
       createPublicKey(publicKey),
       Buffer.from(attestation.signature, "base64"),
     );

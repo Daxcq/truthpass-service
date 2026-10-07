@@ -1,3 +1,5 @@
+import type { DataMode, EvidenceAttestation } from "./data/model.js";
+
 export type ServiceKind = "supplier" | "lab" | "logistics" | "after-sales";
 export type ProbeStatus = "healthy" | "degraded" | "offline";
 export type ServiceExecutionStatus = "accepted" | "rejected";
@@ -13,6 +15,9 @@ export interface ServiceCard {
   historicalScore: number;
   feedbackCount: number;
 }
+
+export type EvidenceMode = DataMode;
+export type SignatureVerification = "verified" | "demo" | "invalid";
 
 export interface TaskRequest {
   taskId: string;
@@ -45,7 +50,9 @@ export interface ExecutionEvidence {
   productionTime: string;
   reportTime: string;
   logisticsGapHours: number;
-  signatureValid: boolean;
+  /** Demo-only claim. External evidence must use attestation and a trusted issuer key. */
+  signatureValid?: boolean;
+  attestation?: EvidenceAttestation;
   /** Fish-oil metrics are optional so the generic service layer remains reusable. */
   epaDhaPercent?: number;
   peroxideValue?: number;

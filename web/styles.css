@@ -932,6 +932,13 @@ body {
 .red-text { color: var(--reject); }
 .drawer-boundary { margin-top: 20px; padding: 13px 14px; border: 1px dashed rgba(255, 138, 80, 0.35); border-radius: 10px; font-size: 12.5px; color: var(--muted); line-height: 1.6; }
 .drawer-boundary span { display: block; color: var(--warn); font-weight: 700; margin-bottom: 4px; }
+.jev-live-result { margin-top: 14px; padding: 13px 14px; border: 1px solid var(--line); border-radius: 10px; background: rgba(93, 213, 213, 0.05); font-size: 12.5px; }
+.jev-live-head { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 4px; font-weight: 700; }
+.jev-live-result p { margin: 8px 0 0; color: var(--warn); line-height: 1.5; }
+.jev-live-result .observer-row { padding: 7px 0; }
+.jev-live-result details { margin-top: 8px; color: var(--cyan-2); }
+.jev-live-result summary { cursor: pointer; }
+.jev-live-result pre { margin: 8px 0 0; max-height: 220px; overflow: auto; padding: 10px; background: rgba(2, 8, 16, 0.5); color: var(--text); font: 11px/1.5 var(--font-num); white-space: pre-wrap; word-break: break-word; }
 
 /* ============ 消费者授权共建 ============ */
 .community-bar { flex-wrap: wrap; }
