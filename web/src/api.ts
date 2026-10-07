@@ -79,14 +79,14 @@ export async function postFeedback(
   consent: boolean,
   purchaseConfirmed: boolean,
   comment?: string,
-): Promise<{ ok: boolean; contributionPoints: number; evidenceHash: string }> {
+): Promise<{ ok: boolean; persisted: boolean; contributionPoints: number; evidenceHash: string }> {
   const res = await fetch("/api/feedback", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ batchId, rating, categories, consent, purchaseConfirmed, comment }),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return (await res.json()) as { ok: boolean; contributionPoints: number; evidenceHash: string };
+  return (await res.json()) as { ok: boolean; persisted: boolean; contributionPoints: number; evidenceHash: string };
 }
 
 export interface VerificationRule {

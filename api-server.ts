@@ -20,7 +20,7 @@ import { ConsumerParticipationRegistry } from "./src/consumer.js";
 import { TruthPassTools } from "./src/tools/truthpass-tools.js";
 import { TrustedIssuerKeyRegistry, type TrustedIssuerPublicKey } from "./src/security/evidence-signatures.js";
 import { resolveStaticFilePath } from "./src/static-path.js";
-import { createPostgresReplayGuard, persistenceEnabled } from "./src/data/persistence.js";
+import { createPostgresReplayGuard, persistConsumerRun, persistenceEnabled } from "./src/data/persistence.js";
 import { loadExecutionEvidenceFromPostgres, loadRepositoryFromPostgres } from "./src/data/postgres-reader.js";
 import { answerConsumerQuestion } from "./src/agents/consumer-assistant.js";
 import { renderConsumerFacts, runAgentCollaboration } from "./src/agents/collaboration.js";
@@ -573,7 +573,7 @@ async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): P
       sendJson(res, 400, { error: "补充反馈最多 1000 字符" });
       return true;
     }
-    await consumers.grantConsent({
+    const consentRecord = await consumers.grantConsent({
       consumerId,
       batchId,
       scopes: ["purchase", "packaging", "odor", "storage", "quality-feedback"],
@@ -591,6 +591,16 @@ async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): P
       categories,
       evidence: { source: "demo/synthetic", purchaseConfirmedByConsumer: true, comment },
     });
+    const persisted = persistenceEnabled();
+    if (persisted) {
+      try {
+        await persistConsumerRun(consentRecord, freshPurchase, feedback);
+      } catch (error) {
+        console.error("消费者反馈持久化失败:", error instanceof Error ? error.message : String(error));
+        sendJson(res, 503, { error: "反馈已生成但未能持久化，请稍后重试" });
+        return true;
+      }
+    }
     try {
       await mailer.sendMail({
         from: `"TruthPass" <${process.env.SMTP_USER}>`,
@@ -618,7 +628,7 @@ async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): P
     } catch (error) {
       console.error("反馈邮件发送失败:", error instanceof Error ? error.message : String(error));
     }
-    sendJson(res, 200, { ok: true, feedbackId: feedback.feedbackId, contributionPoints: feedback.contributionPoints, evidenceHash: feedback.evidenceHash });
+    sendJson(res, 200, { ok: true, persisted, feedbackId: feedback.feedbackId, contributionPoints: feedback.contributionPoints, evidenceHash: feedback.evidenceHash });
     return true;
   }
 

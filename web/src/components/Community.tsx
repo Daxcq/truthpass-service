@@ -18,7 +18,7 @@ export function Community({ onToast, batchId }: { onToast: (msg: string) => void
     setSubmitting(true);
     try {
       const result = await postFeedback(batchId, rating, tags, consent, purchaseConfirmed, comment.trim() || undefined);
-      onToast(`已提交反馈，获得 ${result.contributionPoints} 点共建积分 · 哈希 ${result.evidenceHash.slice(0, 10)}…`);
+      onToast(`已提交反馈${result.persisted ? "并已持久化" : "（当前为内存演示）"}，获得 ${result.contributionPoints} 点共建积分 · 哈希 ${result.evidenceHash.slice(0, 10)}…`);
       setConsent(false);
       setPurchaseConfirmed(false);
       setTags([]);

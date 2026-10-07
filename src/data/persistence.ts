@@ -208,7 +208,7 @@ async function persistServiceFeedback(feedback: FeedbackRecord): Promise<void> {
   );
 }
 
-async function persistConsumerRun(consent: ConsumerConsent, purchase: PurchaseRecord, feedback: ConsumerFeedback): Promise<void> {
+export async function persistConsumerRun(consent: ConsumerConsent, purchase: PurchaseRecord, feedback: ConsumerFeedback): Promise<void> {
   await getPool().query(
     `insert into consumer_consents (consumer_id, batch_id, scopes, consent_hash, granted_at)
      values ($1, $2, $3, $4, $5)
