@@ -14,8 +14,9 @@ import { fishOilBatch, fishOilEvidence, fishOilProduct } from "./src/data/fixtur
 import { getPolicySnapshot } from "./src/rules/policy.js";
 import { ServiceRegistry } from "./src/registry.js";
 import { ConsumerParticipationRegistry } from "./src/consumer.js";
-import { assessProductBatch } from "./src/verifier.js";
-import type { ExecutionEvidence, ServiceAdapter, ServiceCard, TaskRequest } from "./src/types.js";
+import { TruthPassTools } from "./src/tools/truthpass-tools.js";
+import { TrustedIssuerKeyRegistry, type TrustedIssuerPublicKey } from "./src/security/evidence-signatures.js";
+import type { ServiceAdapter, ServiceCard, TaskRequest } from "./src/types.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const WEB_DIST = join(__dirname, "web", "dist");
@@ -62,24 +63,13 @@ const task: TaskRequest = {
 };
 
 const inspectionEvidence = repository.getEvidence("ev-test-report-001")!;
-const executionEvidence: ExecutionEvidence = {
-  serviceId: inspectionEvidence.issuerId,
-  taskId: task.taskId,
-  batchId: inspectionEvidence.batchId,
-  reportBatchId: String(inspectionEvidence.payload.reportBatchId),
-  productionTime: task.productionTime,
-  reportTime: inspectionEvidence.occurredAt,
-  logisticsGapHours: Number(inspectionEvidence.payload.logisticsGapHours),
-  signatureValid: Boolean(inspectionEvidence.payload.signatureValid),
-  epaDhaPercent: Number(inspectionEvidence.payload.epaDhaPercent),
-  peroxideValue: Number(inspectionEvidence.payload.peroxideValue),
-  totox: Number(inspectionEvidence.payload.totox),
-  coldChainGapHours: Number(inspectionEvidence.payload.coldChainGapHours),
-  payload: inspectionEvidence.payload,
-};
+const trustedIssuerKeys = new TrustedIssuerKeyRegistry(
+  JSON.parse(process.env.TRUTHPASS_TRUSTED_ISSUER_KEYS ?? "[]") as TrustedIssuerPublicKey[],
+);
+const inspectionTools = new TruthPassTools(repository, "inspection", trustedIssuerKeys.resolve);
 
 const policy = getPolicySnapshot(task.acceptance.policyId, task.acceptance.policyVersion);
-const assessment = await assessProductBatch(task, executionEvidence);
+const assessment = await inspectionTools.assessProductBatch({ task, evidenceId: "ev-test-report-001" });
 
 // ---------- 服务注册（评委观察台用，三个候选服务） ----------
 function adapterFor(card: ServiceCard, mode: "valid" | "wrong-batch" | "offline"): ServiceAdapter {
@@ -225,7 +215,7 @@ const chatScripts: Record<string, Array<{ cls: string; text: string }>> = {
   ],
   cold: [
     { cls: "cmd", text: "$ zhenyan coldchain --batch FO-2026-001" },
-    { cls: "conclusion", text: `冷链中断 ${executionEvidence.coldChainGapHours}h ≤ ${policy.thresholds.maxLogisticsGapHours}h。` },
+    { cls: "conclusion", text: `冷链中断 ${inspectionEvidence.payload.coldChainGapHours}h ≤ ${policy.thresholds.maxLogisticsGapHours}h。` },
   ],
   fallback: [
     { cls: "plain", text: "抱歉，我目前只能回答该批次已公开的产地、检测项、规则与冷链证据。" },
