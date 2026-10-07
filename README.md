@@ -65,6 +65,18 @@ npm test
 npm run typecheck
 ```
 
+前端（Vite + React + TypeScript + TanStack Query）：
+
+```bash
+# 开发：先启动 API 服务，再启动 Vite dev server（自动代理 /api）
+npm run web           # node server.mjs，监听 4173
+npm run dev           # Vite dev server，监听 5173，代理 /api -> 4173
+
+# 生产：构建后由 server.mjs 直接服务 web/dist
+npm run build
+npm run web
+```
+
 ## 目录
 
 ```text
@@ -87,6 +99,10 @@ docs/DOCUMENT-VERSIONING.md        文档版本、修改说明和协作规则
 docs/jev-integration-v0.5.md       JEV 结构化决策门、类型合同和降级策略
 assets/fish-oil-evidence-dashboard.png 前端高保真方向图
 assets/fish-oil-consumer-cli-journey.png 消费者 CLI 证据故事方向图
+web/                              前端源码（Vite + React + TypeScript）
+web/src/components/               页面组件（对话、产品、证据链路、共建）
+web/public/assets/                图片素材与品牌 Logo
+server.mjs                        零依赖静态服务 + mock API + SSE 对话
 ```
 
 ## 赛题对应
