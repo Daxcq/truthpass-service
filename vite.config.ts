@@ -1,7 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// Frontend dev server proxies /api to the zero-dependency Node backend (server.mjs).
+// Frontend dev server proxies /api to the shared TypeScript backend (api-server.ts).
 export default defineConfig({
   root: "web",
   plugins: [react()],

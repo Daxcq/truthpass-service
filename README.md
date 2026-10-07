@@ -102,7 +102,7 @@ assets/fish-oil-consumer-cli-journey.png 消费者 CLI 证据故事方向图
 web/                              前端源码（Vite + React + TypeScript）
 web/src/components/               页面组件（对话、产品、证据链路、共建）
 web/public/assets/                图片素材与品牌 Logo
-server.mjs                        零依赖静态服务 + mock API + SSE 对话
+server.mjs                        兼容启动入口，统一转发到 api-server.ts
 ```
 
 ## 赛题对应
