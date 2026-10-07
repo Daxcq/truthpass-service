@@ -1,9 +1,9 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { fetchMetricDetail, fetchProduct } from "../api";
-import { ICON_URLS, METRIC_BAR_PCT, RULES } from "../data";
+import { fetchMetricDetail, fetchProduct, fetchVerification } from "../api";
+import { ICON_URLS, METRIC_BAR_PCT } from "../data";
 import { useCountUp } from "../hooks/useCountUp";
-import type { KeyMetric, MetricSource, ProductBatch } from "../types";
+import type { KeyMetric, MetricSource, ProductBatch, VerifyState } from "../types";
 import { useModal } from "./ModalContext";
 
 function parseMetricValue(value: string): { num: number | null; suffix: string; decimals: number } {
@@ -45,10 +45,10 @@ function MetricSources({ sources }: { sources: MetricSource[] }) {
   );
 }
 
-function MetricDetailModal({ metricKey, label, value }: { metricKey: string; label: string; value: string }) {
+function MetricDetailModal({ batchId, metricKey, label, value }: { batchId: string; metricKey: string; label: string; value: string }) {
   const { data, isLoading } = useQuery({
-    queryKey: ["metric", metricKey],
-    queryFn: () => fetchMetricDetail(metricKey),
+    queryKey: ["metric", batchId, metricKey],
+    queryFn: () => fetchMetricDetail(batchId, metricKey),
   });
   return (
     <div>
@@ -70,11 +70,12 @@ function MetricDetailModal({ metricKey, label, value }: { metricKey: string; lab
   );
 }
 
-function MetricCard({ metric }: { metric: KeyMetric }) {
+function MetricCard({ metric, batchId }: { metric: KeyMetric; batchId: string }) {
   const { openModal } = useModal();
-  const pct = METRIC_BAR_PCT[metric.key] ?? 0;
+  const pct = metric.bar ?? 0;
   const warn = metric.key === "peroxide";
   const missing = metric.status === "missing";
+  const failed = metric.status === "fail";
   const [barPct, setBarPct] = useState(0);
 
   useEffect(() => {
@@ -83,7 +84,7 @@ function MetricCard({ metric }: { metric: KeyMetric }) {
   }, [pct]);
 
   return (
-    <div className={missing ? "metric-card missing wide" : "metric-card"}>
+    <div className={missing ? "metric-card missing wide" : failed ? "metric-card fail" : "metric-card"}>
       <button
         className="metric-q"
         title="查看来源"
@@ -98,7 +99,7 @@ function MetricCard({ metric }: { metric: KeyMetric }) {
                   </p>
                 </div>,
               )
-            : openModal(`${metric.label} ${metric.value}`, <MetricDetailModal metricKey={metric.key} label={metric.label} value={metric.value} />)
+            : openModal(`${metric.label} ${metric.value}`, <MetricDetailModal batchId={batchId} metricKey={metric.key} label={metric.label} value={metric.value} />)
         }
       >
         ?
@@ -107,7 +108,8 @@ function MetricCard({ metric }: { metric: KeyMetric }) {
         <img src={ICON_URLS[metric.icon]} alt="" />
       </div>
       <div className="metric-label">{metric.label}</div>
-      <div className={missing ? "metric-value missing" : warn ? "metric-value warn" : "metric-value"}>
+      <div className={missing ? "metric-value missing" : failed ? "metric-value fail" : warn ? "metric-value warn" : "metric-value"}>
+        {failed && <span className="fail-flag">✗</span>}
         <AnimatedValue value={metric.value} />
       </div>
       <div className="metric-bar">
@@ -118,25 +120,66 @@ function MetricCard({ metric }: { metric: KeyMetric }) {
   );
 }
 
-function RulesView() {
+function RulesView({ batchId }: { batchId: string }) {
+  const { data, isLoading } = useQuery({ queryKey: ["verification", batchId], queryFn: () => fetchVerification(batchId) });
+  if (isLoading) return <p style={{ color: "var(--muted)" }}>加载中…</p>;
   return (
     <>
-      {RULES.map((rule) => (
+      {(data?.rules ?? []).map((rule) => (
         <div className="rule-row" key={rule.name}>
-          <span className="mark">✓</span>
+          <span className={rule.passed ? "mark" : "mark fail"}>{rule.passed ? "✓" : "✗"}</span>
           <span className="rule-name">{rule.name}</span>
           <span className="rule-desc">{rule.desc}</span>
         </div>
       ))}
-      <p className="rule-verdict">综合：按当前规则通过（accepted）</p>
+      <p className={data?.status === "accepted" ? "rule-verdict" : "rule-verdict fail"}>
+        综合：{data?.status === "accepted" ? "按当前规则通过" : "未通过"}（得分 {data?.score}/100）· 证据哈希 {data?.evidenceHash.slice(0, 16)}…
+      </p>
     </>
   );
 }
 
-export function ProductPanel() {
-  const { data: product, isLoading, isError } = useQuery({ queryKey: ["product"], queryFn: fetchProduct });
+export function ProductPanel({ state, batchId }: { state: VerifyState; batchId: string }) {
+  const { data: product, isLoading, isError } = useQuery({
+    queryKey: ["product", batchId],
+    queryFn: () => fetchProduct(batchId),
+    enabled: state === "done",
+  });
   const { openModal } = useModal();
   const [tooltipVisible, setTooltipVisible] = useState(false);
+
+  if (state === "idle") {
+    return (
+      <section id="product" className="panel product-panel">
+        <div className="pending-state">
+          <div className="pending-icon" aria-hidden="true">◷</div>
+          <h3>待检测</h3>
+          <p>请先在左侧选择商品，Agent 将发起溯源验证，完成后这里会展示商品信息、检测指标与验收结论。</p>
+        </div>
+      </section>
+    );
+  }
+
+  if (state === "running") {
+    return (
+      <section id="product" className="panel product-panel">
+        <div className="pending-state">
+          <div className="pending-icon pulse" aria-hidden="true">◷</div>
+          <h3>正在验证</h3>
+          <p>Agent 正在读取设备数据、关联检测报告并执行规则验收，请稍候…</p>
+        </div>
+        <div className="metrics" style={{ marginTop: 20 }}>
+          {[0, 1, 2].map((i) => (
+            <div className="metric-card" key={i}>
+              <div className="skeleton" style={{ width: 36, height: 36, borderRadius: 10 }} />
+              <div className="skeleton" style={{ width: "60%", height: 14, marginTop: 12 }} />
+              <div className="skeleton" style={{ width: "40%", height: 28, marginTop: 8 }} />
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -226,15 +269,15 @@ export function ProductPanel() {
 
       <div className="verdict-wrap">
         <button
-          className="verdict"
+          className={product.verification.status === "rejected" ? "verdict fail" : "verdict"}
           type="button"
-          onClick={() => openModal("完整验收规则（v1.0 · 9 项）", <RulesView />)}
+          onClick={() => openModal("完整验收规则（v1.0 · 9 项）", <RulesView batchId={batchId} />)}
           onMouseEnter={() => setTooltipVisible(true)}
           onMouseLeave={() => setTooltipVisible(false)}
         >
-          <span className="verdict-icon">✓</span>
+          <span className="verdict-icon">{product.verification.status === "rejected" ? "✗" : "✓"}</span>
           <span className="verdict-text">
-            <strong>按当前规则通过</strong>
+            <strong>{product.verification.status === "rejected" ? "未通过验收" : "按当前规则通过"}</strong>
             <small>{product.verification.summary}</small>
           </span>
           <span className="verdict-chevron">›</span>
@@ -248,14 +291,14 @@ export function ProductPanel() {
 
       <div className="metrics">
         {product.keyMetrics.map((metric) => (
-          <MetricCard key={metric.key} metric={metric} />
+          <MetricCard key={metric.key} metric={metric} batchId={batchId} />
         ))}
       </div>
 
       <div className="scope-bar">
         <span className="scope-label">适用范围</span>
         <span className="scope-text">通用范围：本结论适用于 {product.verification.scope}。</span>
-        <button className="scope-link" type="button" onClick={() => openModal("完整验收规则（v1.0 · 9 项）", <RulesView />)}>
+        <button className="scope-link" type="button" onClick={() => openModal("完整验收规则（v1.0 · 9 项）", <RulesView batchId={batchId} />)}>
           查看详细说明 →
         </button>
       </div>

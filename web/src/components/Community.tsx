@@ -2,9 +2,11 @@ import { useState } from "react";
 import { postFeedback } from "../api";
 import { FEEDBACK_TAGS } from "../data";
 
-export function Community({ onToast }: { onToast: (msg: string) => void }) {
+export function Community({ onToast, batchId }: { onToast: (msg: string) => void; batchId: string }) {
   const [consent, setConsent] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const toggleTag = (tag: string) =>
@@ -14,10 +16,12 @@ export function Community({ onToast }: { onToast: (msg: string) => void }) {
     if (!consent || submitting) return;
     setSubmitting(true);
     try {
-      const result = await postFeedback(tags);
+      const result = await postFeedback(rating || 5, tags, comment.trim() || undefined);
       onToast(`已提交反馈，获得 ${result.contributionPoints} 点共建积分 · 哈希 ${result.evidenceHash.slice(0, 10)}…`);
       setConsent(false);
       setTags([]);
+      setRating(0);
+      setComment("");
     } catch {
       onToast("提交失败，请稍后重试");
     } finally {
@@ -75,7 +79,7 @@ export function Community({ onToast }: { onToast: (msg: string) => void }) {
                 ◌
               </span>
               <div className="consent-text">
-                <strong>授权 FO-2026-001 的质量反馈</strong>
+                <strong>授权 {batchId} 的质量反馈</strong>
                 <small>你可以随时撤销，不上传健康数据</small>
               </div>
               <label className="switch">
@@ -95,6 +99,7 @@ export function Community({ onToast }: { onToast: (msg: string) => void }) {
                   key={tag}
                   className={tags.includes(tag) ? "feedback-tag active" : "feedback-tag"}
                   type="button"
+                  disabled={!consent}
                   onClick={() => toggleTag(tag)}
                 >
                   {tag}
@@ -102,14 +107,41 @@ export function Community({ onToast }: { onToast: (msg: string) => void }) {
               ))}
             </div>
 
+            <div className="rating-row">
+              <span className="rating-label">质量评分</span>
+              <div className="stars">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    className={n <= rating ? "star active" : "star"}
+                    type="button"
+                    disabled={!consent}
+                    onClick={() => setRating(n)}
+                    aria-label={`${n} 星`}
+                  >
+                    ★
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <textarea
+              className="feedback-input"
+              value={comment}
+              disabled={!consent}
+              onChange={(e) => setComment(e.target.value)}
+              placeholder="补充你的体验反馈（选填），例如：胶囊大小合适、无结块…"
+              rows={2}
+            />
+
             <button
               className="join-btn full"
               type="button"
-              disabled={!consent || submitting}
+              disabled={!consent || submitting || rating === 0 || tags.length === 0}
               onClick={submit}
             >
               <span>{submitting ? "提交中…" : "提交反馈"}</span>
-              <span>获得 14 点共建积分</span>
+              <span>获得共建积分</span>
             </button>
             <p className="consent-foot">这是消费服务权益，不代表股权、债权或投资回报。</p>
           </div>
@@ -125,8 +157,7 @@ export function Community({ onToast }: { onToast: (msg: string) => void }) {
 
       <footer id="about" className="footer">
         <div className="brand">
-          <span className="brand-zh">真验</span>
-          <span className="brand-en">Zhenyan</span>
+          <span className="brand-zh">TruthPass</span>
         </div>
         <span className="footer-divider">|</span>
         <p>让真实被看见，让信任自然发生</p>

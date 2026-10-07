@@ -7,10 +7,13 @@ import { ModalProvider } from "./components/ModalContext";
 import { ObserverDrawer } from "./components/ObserverDrawer";
 import { ProductPanel } from "./components/ProductPanel";
 import { TopBar } from "./components/TopBar";
+import type { VerifyState } from "./types";
 
 export default function App() {
   const [toast, setToast] = useState<string | null>(null);
   const [observerOpen, setObserverOpen] = useState(false);
+  const [verifyState, setVerifyState] = useState<VerifyState>("idle");
+  const [batchId, setBatchId] = useState("FO-2026-001");
   const toastTimer = useRef<number | undefined>(undefined);
 
   const showToast = (msg: string) => {
@@ -29,11 +32,15 @@ export default function App() {
       <TopBar onOpenObserver={() => setObserverOpen(true)} />
       <Hero />
       <main className="layout">
-        <ChatPanel />
-        <ProductPanel />
-        <EvidencePanel />
+        <ChatPanel
+          onStart={() => setVerifyState("running")}
+          onDone={() => setVerifyState("done")}
+          onBatch={(id) => setBatchId(id)}
+        />
+        <ProductPanel state={verifyState} batchId={batchId} />
+        <EvidencePanel state={verifyState} batchId={batchId} />
       </main>
-      <Community onToast={showToast} />
+      <Community onToast={showToast} batchId={batchId} />
       <ObserverDrawer open={observerOpen} onClose={() => setObserverOpen(false)} />
       {toast && (
         <div className="toast" role="status">

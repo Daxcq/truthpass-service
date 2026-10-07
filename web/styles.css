@@ -161,6 +161,7 @@ body {
   margin: 0 auto;
   padding: 14px 36px 44px;
   align-items: stretch;
+  grid-auto-rows: minmax(660px, auto);
 }
 
 .panel {
@@ -202,7 +203,7 @@ body {
 }
 
 /* ================= 左栏 · Agent 对话 ================= */
-.chat-panel { display: flex; flex-direction: column; min-height: 560px; padding: 0; overflow: hidden; }
+.chat-panel { display: flex; flex-direction: column; min-height: 0; padding: 0; overflow: hidden; contain: layout size; }
 
 .chat-head {
   display: flex;
@@ -236,6 +237,7 @@ body {
 
 .chat-log {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -322,8 +324,11 @@ body {
 }
 
 .chat-quick {
+  display: flex; flex-direction: column; gap: 7px;
+  padding: 10px 16px 6px;
+}
+.quick-group {
   display: flex; align-items: center; flex-wrap: wrap; gap: 7px;
-  padding: 10px 16px 4px;
 }
 .chat-quick-label { color: var(--muted); font-size: 12px; }
 .chat-quick button {
@@ -587,7 +592,7 @@ body {
 .scope-link:hover { text-decoration: underline; }
 
 /* ================= 右栏 · 证据链路 ================= */
-.evidence-panel { position: sticky; top: 78px; }
+.evidence-panel { min-height: 0; }
 
 .evidence-steps { list-style: none; margin: 0 0 18px; padding: 0; }
 .evidence-step { position: relative; padding: 0 0 26px 52px; }
@@ -827,9 +832,11 @@ body {
   font-size: 14px;
 }
 .rule-row .mark { color: var(--ok); font-weight: 700; }
+.rule-row .mark.fail { color: var(--reject); }
 .rule-row .rule-name { min-width: 96px; }
 .rule-row .rule-desc { color: var(--muted); }
 .rule-verdict { margin-top: 16px; color: var(--ok); font-weight: 600; }
+.rule-verdict.fail { color: var(--reject); }
 .source-item { padding: 11px 0; border-bottom: 1px solid var(--line-soft); font-size: 13.5px; line-height: 1.7; }
 .source-item b { color: var(--cyan-2); }
 .journey-step { display: grid; grid-template-columns: 34px 1fr; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--line-soft); }
@@ -858,10 +865,10 @@ body {
 
 /* ================= 响应式 ================= */
 @media (max-width: 1279px) {
-  .layout { grid-template-columns: 1fr 1fr; }
-  .chat-panel { grid-column: 1 / -1; order: 3; min-height: auto; }
+  .layout { grid-template-columns: 1fr 1fr; height: auto; }
+  .chat-panel { grid-column: 1 / -1; order: 3; height: auto; min-height: auto; }
   .chat-log { max-height: 320px; }
-  .evidence-panel { position: static; }
+  .evidence-panel { height: auto; overflow-y: visible; }
   .hero-slogan { display: none; }
   .community-bar { flex-wrap: wrap; }
   .community-items { grid-template-columns: repeat(3, 1fr); flex: 1 1 100%; order: 3; }
@@ -954,7 +961,8 @@ body {
 .tag-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
 .feedback-tag { background: transparent; border: 1px solid var(--line); color: #b9cdd8; border-radius: 999px; padding: 5px 11px; font-size: 12px; cursor: pointer; transition: .2s; }
 .feedback-tag.active { background: rgba(93, 213, 213, 0.15); border-color: var(--cyan); color: var(--cyan-2); }
-.join-btn.full { width: 100%; }
+.feedback-tag:disabled, .star:disabled { opacity: 0.4; cursor: not-allowed; }
+.join-btn.full { width: 100%; margin-top: 14px; }
 .join-btn.full span { display: block; }
 .join-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .consent-foot { color: var(--muted); font-size: 11px; margin: 8px 0 0; line-height: 1.5; text-align: center; }
@@ -970,3 +978,104 @@ body {
   0% { background-position: 180% 0; }
   100% { background-position: -180% 0; }
 }
+
+/* ============ 待检测 / 验证中 占位 ============ */
+.pending-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; min-height: 260px; padding: 40px 20px; color: var(--muted);
+}
+.pending-icon { font-size: 40px; color: var(--cyan-2); opacity: 0.75; margin-bottom: 12px; line-height: 1; }
+.pending-icon.pulse { animation: pending-pulse 1.4s ease-in-out infinite; }
+.pending-state h3 { margin: 0 0 8px; color: var(--text); font-size: 17px; letter-spacing: 0.5px; }
+.pending-state p { margin: 0; font-size: 13px; line-height: 1.65; max-width: 340px; }
+.pending-state.small { min-height: 160px; }
+.pending-state.small .pending-icon { font-size: 26px; margin-bottom: 8px; }
+@keyframes pending-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+/* ============ 消费者评分与自由文本 ============ */
+.rating-row { display: flex; align-items: center; gap: 10px; margin: 12px 0 8px; }
+.rating-label { color: var(--muted); font-size: 12px; flex: none; }
+.stars { display: flex; gap: 3px; }
+.star {
+  background: none; border: none; padding: 0; line-height: 1;
+  color: rgba(125, 232, 232, 0.25); font-size: 22px; cursor: pointer;
+  transition: color .15s, transform .15s;
+}
+.star:hover { transform: scale(1.15); }
+.star.active { color: #f2b84b; text-shadow: 0 0 12px rgba(242, 184, 75, 0.5); }
+.feedback-input {
+  width: 100%; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--line-soft);
+  border-radius: 10px; color: var(--text); font-size: 12.5px; line-height: 1.5;
+  padding: 9px 11px; resize: vertical; font-family: inherit; min-height: 46px;
+  box-sizing: border-box;
+}
+.feedback-input:focus { outline: none; border-color: var(--cyan); }
+.feedback-input::placeholder { color: rgba(157, 178, 191, 0.6); }
+.feedback-input:disabled { opacity: 0.5; cursor: not-allowed; background: rgba(255, 255, 255, 0.02); }
+
+/* ============ 技术详情折叠入口 ============ */
+.tech-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: none; border: none; color: var(--muted); font-size: 12px;
+  cursor: pointer; padding: 6px 0; margin-top: 6px; letter-spacing: 0.3px;
+  transition: color .2s;
+}
+.tech-toggle:hover { color: var(--cyan-2); }
+.tech-chev { font-size: 13px; line-height: 1; }
+.tech-details {
+  margin-top: 8px; padding: 12px 14px; border: 1px solid var(--line-soft);
+  border-radius: 10px; background: rgba(5, 13, 25, 0.4);
+  display: flex; flex-direction: column; gap: 12px;
+}
+.tech-item { display: flex; gap: 10px; font-size: 12px; line-height: 1.5; }
+.tech-index {
+  flex: none; width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--line);
+  color: var(--cyan-2); display: grid; place-items: center; font-size: 10px; margin-top: 1px;
+}
+.tech-item b { display: block; color: var(--text); font-size: 12.5px; font-weight: 600; }
+.tech-item span { display: block; color: var(--muted); font-size: 11px; }
+.tech-item code {
+  display: block; font-family: var(--font-num); font-size: 10.5px; color: var(--cyan-2);
+  word-break: break-all; margin-top: 2px; opacity: 0.85;
+}
+
+/* ============ 批次选项卡 ============ */
+.batch-select { position: relative; }
+.batch-trigger {
+  background: transparent; border: 1px solid var(--line); color: var(--cyan-2);
+  border-radius: 999px; padding: 5px 12px; font-size: 12px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 5px; transition: .2s;
+}
+.batch-trigger:hover { background: rgba(93, 213, 213, 0.1); border-color: var(--cyan); }
+.batch-menu {
+  position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 100;
+  min-width: 230px; background: var(--panel-strong); border: 1px solid var(--line);
+  border-radius: 12px; padding: 6px; box-shadow: 0 12px 30px rgba(2, 8, 16, 0.6);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.batch-menu button {
+  display: flex; align-items: baseline; gap: 9px; text-align: left;
+  background: none; border: none; color: var(--text); font-size: 12.5px;
+  padding: 8px 10px; border-radius: 8px; cursor: pointer; transition: background .15s;
+}
+.batch-menu button:hover { background: rgba(93, 213, 213, 0.1); }
+.batch-menu button b { color: var(--cyan-2); font-family: var(--font-num); font-weight: 700; flex: none; }
+.batch-menu button span { color: var(--muted); }
+
+/* ============ 指标不通过状态 ============ */
+.metric-card.fail {
+  border-color: rgba(240, 109, 103, 0.4);
+  background: linear-gradient(180deg, rgba(240, 109, 103, 0.08), rgba(255, 255, 255, 0.02));
+}
+.metric-value.fail { color: var(--reject); text-shadow: 0 0 16px rgba(240, 109, 103, 0.35); }
+.fail-flag { margin-right: 5px; font-size: 0.72em; vertical-align: 2px; }
+.metric-card.fail .metric-bar-fill {
+  background: linear-gradient(90deg, #c0392b, var(--reject));
+  box-shadow: 0 0 10px rgba(240, 109, 103, 0.4);
+}
+.verdict.fail { border-color: rgba(240, 109, 103, 0.45); background: rgba(240, 109, 103, 0.1); }
+.verdict.fail .verdict-icon { background: var(--reject); box-shadow: 0 0 12px rgba(240, 109, 103, 0.4); }
+.verdict.fail .verdict-text strong { color: var(--reject); }

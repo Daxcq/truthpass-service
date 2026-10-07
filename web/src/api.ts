@@ -14,11 +14,11 @@ async function getJson<T>(url: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-export const fetchProduct = () => getJson<ProductBatch>(`/api/products/${BATCH_ID}`);
-export const fetchEvidenceLink = () => getJson<EvidenceStep[]>(`/api/products/${BATCH_ID}/evidence-link`);
-export const fetchJourney = () => getJson<Journey>(`/api/products/${BATCH_ID}/journey`);
-export const fetchMetricDetail = (key: string) =>
-  getJson<MetricDetail>(`/api/products/${BATCH_ID}/metrics/${key}`);
+export const fetchProduct = (batchId: string) => getJson<ProductBatch>(`/api/products/${batchId}`);
+export const fetchEvidenceLink = (batchId: string) => getJson<EvidenceStep[]>(`/api/products/${batchId}/evidence-link`);
+export const fetchJourney = (batchId: string) => getJson<Journey>(`/api/products/${batchId}/journey`);
+export const fetchMetricDetail = (batchId: string, key: string) =>
+  getJson<MetricDetail>(`/api/products/${batchId}/metrics/${key}`);
 
 export async function postChat(
   question: string,
@@ -69,12 +69,46 @@ export interface ObserverData {
 
 export const fetchObserver = () => getJson<ObserverData>("/api/observer");
 
-export async function postFeedback(categories: string[]): Promise<{ ok: boolean; contributionPoints: number; evidenceHash: string }> {
+export async function postFeedback(
+  rating: number,
+  categories: string[],
+  comment?: string,
+): Promise<{ ok: boolean; contributionPoints: number; evidenceHash: string }> {
   const res = await fetch("/api/feedback", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ rating: 5, categories }),
+    body: JSON.stringify({ rating, categories, comment }),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return (await res.json()) as { ok: boolean; contributionPoints: number; evidenceHash: string };
 }
+
+export interface VerificationRule {
+  name: string;
+  desc: string;
+  passed: boolean;
+}
+
+export interface VerificationEvidence {
+  evidenceId: string;
+  kind: string;
+  issuerId: string;
+  sourceKind: string;
+  payloadHash: string;
+  status: string;
+  occurredAt: string;
+}
+
+export interface VerificationData {
+  batchId: string;
+  productName: string;
+  policy: { id: string; version: string; dataMode: string };
+  status: string;
+  score: number;
+  evidenceHash: string;
+  serviceExecution: { status: string; score: number; evidenceHash: string };
+  rules: VerificationRule[];
+  evidence: VerificationEvidence[];
+}
+
+export const fetchVerification = (batchId: string) => getJson<VerificationData>(`/api/verification?batchId=${batchId}`);

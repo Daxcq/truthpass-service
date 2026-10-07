@@ -6,7 +6,8 @@ export interface KeyMetric {
   label: string;
   value: string;
   unit: string;
-  status: "pass" | "missing";
+  bar: number;
+  status: "pass" | "missing" | "fail";
 }
 
 export interface ProductBatch {
@@ -37,9 +38,9 @@ export interface EvidenceStep {
 
 export interface JourneyStep {
   step: number;
+  icon: string;
   title: string;
-  description: string;
-  hash: string;
+  desc: string;
 }
 
 export interface Journey {
@@ -83,3 +84,5 @@ export interface ChatLine {
   cls: ChatLineClass;
   text: string;
 }
+
+export type VerifyState = "idle" | "running" | "done";
