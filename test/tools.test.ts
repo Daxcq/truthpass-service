@@ -6,7 +6,7 @@ import { MemoryDataRepository } from "../src/data/repository.js";
 import { TruthPassTools, ToolBoundaryError } from "../src/tools/truthpass-tools.js";
 import type { JevRole } from "../src/jev/model.js";
 import type { ExecutionEvidence, TaskRequest } from "../src/types.js";
-import { evidenceSigningPayload } from "../src/security/evidence-signatures.js";
+import { evidenceSigningPayload, TrustedIssuerKeyRegistry } from "../src/security/evidence-signatures.js";
 
 async function setup(role: JevRole = "inspection", includeTaskReport = false): Promise<TruthPassTools> {
   const repository = new MemoryDataRepository();
@@ -202,7 +202,10 @@ test("tools verify external evidence signatures before deterministic assessment"
   repository.createProduct(fishOilProduct);
   repository.createBatch(fishOilBatch);
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
-  const publicKeyPem = publicKey.export({ type: "spki", format: "pem" }).toString();
+  const registry = new TrustedIssuerKeyRegistry([{
+    issuerId: "trusted-lab", keyId: "trusted-lab-key-1",
+    publicKeyPem: publicKey.export({ type: "spki", format: "pem" }).toString(),
+  }]);
   const evidenceInput = {
     schemaVersion: "evidence.v1" as const, evidenceId: "ev-signed-report", batchId: task.batchId, kind: "inspection" as const,
     issuerId: "trusted-lab", sourceKind: "third_party" as const, occurredAt: "2026-10-06T10:00:00Z", dataMode: "external" as const,
@@ -211,9 +214,7 @@ test("tools verify external evidence signatures before deterministic assessment"
   const keyId = "trusted-lab-key-1";
   const signature = sign(null, Buffer.from(evidenceSigningPayload(evidenceInput, keyId)), privateKey).toString("base64");
   await repository.addEvidence({ ...evidenceInput, attestation: { algorithm: "Ed25519", keyId, signature } });
-  const tools = new TruthPassTools(repository, "inspection", (issuerId, resolvedKeyId) =>
-    issuerId === "trusted-lab" && resolvedKeyId === keyId ? publicKeyPem : undefined,
-  );
+  const tools = new TruthPassTools(repository, "inspection", registry.resolve);
 
   const result = await tools.assessProductBatch({ task, evidenceId: evidenceInput.evidenceId });
   assert.equal(result.status, "accepted");
