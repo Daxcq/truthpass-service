@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assessProductionBatch } from "../src/production.js";
+import { assessProductionBatch, buildProductionPublicSummary } from "../src/production.js";
 import { fishOilBatch, fishOilProduct } from "../src/data/fixtures.js";
 import { MemoryDataRepository } from "../src/data/repository.js";
 import { validateEvidence, validateProductionEvent } from "../src/data/validation.js";
@@ -131,4 +131,19 @@ test("production assessment policy and final status are server-selected", async 
   assert.equal(assessment.policyVersion, "v1");
   assert.equal("verdict" in assessment, false);
   assert.equal("score" in assessment, false);
+});
+
+test("exposes traceability and user-facing process facts without adding a verdict", async () => {
+  assert.equal(validateProductionEvent({ ...event(), traceability: { originRegion: "北太平洋海域" } }).ok, true);
+  assert.equal(validateProductionEvent({ ...event(), traceability: { originRegion: "", extra: "secret" } }).ok, false);
+  const repository = await repositoryWithBatch();
+  await repository.addEvidence({
+    schemaVersion: "evidence.v1", evidenceId: "ev-public-fact", batchId: fishOilBatch.batchId,
+    kind: "production", issuerId: fishOilProduct.supplierId, sourceKind: "manufacturer",
+    occurredAt: event().endedAt, payload: { ...event(), traceability: { originRegion: "北太平洋海域" } }, dataMode: "demo/synthetic",
+  });
+  const summary = await buildProductionPublicSummary(repository, fishOilBatch.batchId);
+  assert.equal(summary.originRegion, "北太平洋海域");
+  assert.deepEqual(summary.facts.map((fact) => [fact.label, fact.value]), [["接收温度", "4.5 C"]]);
+  assert.equal("verdict" in summary, false);
 });

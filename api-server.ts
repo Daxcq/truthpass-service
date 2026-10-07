@@ -6,7 +6,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { extname, join, normalize, resolve } from "node:path";
+import { extname, isAbsolute, join, normalize, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { MemoryDataRepository } from "./src/data/repository.js";
@@ -17,6 +17,7 @@ import { ServiceRegistry } from "./src/registry.js";
 import { ConsumerParticipationRegistry } from "./src/consumer.js";
 import { TruthPassTools } from "./src/tools/truthpass-tools.js";
 import { TrustedIssuerKeyRegistry, type TrustedIssuerPublicKey } from "./src/security/evidence-signatures.js";
+import { createPostgresReplayGuard, persistenceEnabled } from "./src/data/persistence.js";
 import type { ServiceAdapter, ServiceCard, TaskRequest } from "./src/types.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
@@ -68,7 +69,8 @@ const inspectionEvidence = repository.getEvidence("ev-test-report-001")!;
 const trustedIssuerKeys = new TrustedIssuerKeyRegistry(
   JSON.parse(process.env.TRUTHPASS_TRUSTED_ISSUER_KEYS ?? "[]") as TrustedIssuerPublicKey[],
 );
-const inspectionTools = new TruthPassTools(repository, "inspection", trustedIssuerKeys.resolve, true);
+const replayGuard = persistenceEnabled() ? createPostgresReplayGuard() : undefined;
+const inspectionTools = new TruthPassTools(repository, "inspection", trustedIssuerKeys.resolve, true, replayGuard);
 
 const policy = getPolicySnapshot(task.acceptance.policyId, task.acceptance.policyVersion);
 const assessment = await inspectionTools.assessProductBatch({ task, evidenceId: "ev-test-report-001" });
@@ -132,7 +134,7 @@ const services: Array<[ServiceCard, "valid" | "wrong-batch" | "offline"]> = [
   ],
 ];
 
-const registry = new ServiceRegistry(trustedIssuerKeys.resolve);
+const registry = new ServiceRegistry(trustedIssuerKeys.resolve, replayGuard);
 for (const [card, mode] of services) registry.register(card, adapterFor(card, mode), "demo/synthetic");
 
 // ---------- 消费者共建 ----------
@@ -366,8 +368,10 @@ async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): P
 
 async function handleStatic(url: URL, res: ServerResponse): Promise<void> {
   const pathname = decodeURIComponent(url.pathname);
-  let filePath = pathname === "/" ? join(WEB, "index.html") : join(WEB, normalize(pathname));
-  if (!filePath.startsWith(WEB)) {
+  const filePath = resolve(pathname === "/" ? join(WEB, "index.html") : join(WEB, normalize(pathname)));
+  // relative() 判定：目标必须严格落在 WEB 目录内（startsWith 前缀匹配可被兄弟目录绕过）
+  const rel = relative(WEB, filePath);
+  if (rel.startsWith("..") || isAbsolute(rel)) {
     res.writeHead(403);
     res.end("Forbidden");
     return;
@@ -390,7 +394,8 @@ async function handleStatic(url: URL, res: ServerResponse): Promise<void> {
 
 const server = createServer(async (req, res) => {
   try {
-    const url = new URL(req.url ?? "/", `http://${req.headers.host || "localhost"}`);
+    // 固定 base：仅解析 pathname/search，不引入不可信的 Host 头
+    const url = new URL(req.url ?? "/", "http://localhost");
     if (url.pathname.startsWith("/api/")) {
       const handled = await handleApi(url, req, res);
       if (!handled) sendJson(res, 404, { error: "not found" });

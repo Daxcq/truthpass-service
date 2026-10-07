@@ -40,6 +40,7 @@ export const fishOilEvidence: NewEvidenceRecord[] = [
       observations: [{ code: "temperature", value: 4.5, unit: "C" }],
       deviations: [],
       sourceEvidenceIds: [],
+      traceability: { originRegion: "北太平洋海域" },
     },
     dataMode: "demo/synthetic",
   },

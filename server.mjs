@@ -4,6 +4,9 @@ import { readFile } from "node:fs/promises";
 import { extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TypesafeClient } from "./src/typesafe/api.ts";
+import { MemoryDataRepository } from "./src/data/repository.ts";
+import { fishOilBatch, fishOilEvidence, fishOilProduct } from "./src/data/fixtures.ts";
+import { buildProductionPublicSummary } from "./src/production.ts";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const WEB_DIST = join(__dirname, "web", "dist");
@@ -11,6 +14,23 @@ const WEB = existsSync(WEB_DIST) ? WEB_DIST : join(__dirname, "web");
 const EXAMPLES = join(__dirname, "examples");
 const PORT = process.env.PORT || 4173;
 const typesafe = new TypesafeClient();
+const productionRepository = new MemoryDataRepository();
+productionRepository.createProduct(fishOilProduct);
+productionRepository.createBatch(fishOilBatch);
+for (const evidence of fishOilEvidence) await productionRepository.addEvidence(evidence);
+const productionProcess = await buildProductionPublicSummary(productionRepository, fishOilBatch.batchId);
+const observerData = {
+  task: "task-fish-oil-2026-001",
+  policy: "fish-oil-quality-v1",
+  jev: "route_to_rule · 0.94 · demo",
+  evidenceRoot: "0xb436…dca6",
+  chainStatus: "待锚定 · 可重试",
+  services: [
+    { id: "lab-c", history: 88, live: "online", verdict: "passed" },
+    { id: "lab-a", history: 92, live: "degraded", verdict: "rejected" },
+    { id: "lab-b", history: 96, live: "offline", verdict: "not-called" },
+  ],
+};
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -197,6 +217,10 @@ async function handleApi(url, req, res) {
     }
   }
 
+  if (p === "/api/observer" && req.method === "GET") {
+    return sendJson(res, 200, observerData);
+  }
+
   if (p === "/api/agent/chat" && req.method === "POST") {
     streamChat(req, res);
     return true;
@@ -205,12 +229,13 @@ async function handleApi(url, req, res) {
   const productMatch = p.match(/^\/api\/products\/([^/]+)\/?$/);
   const evidenceMatch = p.match(/^\/api\/products\/([^/]+)\/evidence-link\/?$/);
   const journeyMatch = p.match(/^\/api\/products\/([^/]+)\/journey\/?$/);
+  const productionMatch = p.match(/^\/api\/products\/([^/]+)\/production\/?$/);
   const metricMatch = p.match(/^\/api\/products\/([^/]+)\/metrics\/([^/]+)\/?$/);
 
   try {
     if (productMatch) {
       if (productMatch[1] !== "FO-2026-001") return sendJson(res, 404, { error: "batch not found" });
-      return sendJson(res, 200, await readJson("fo-2026-001-batch.json"));
+      return sendJson(res, 200, { ...(await readJson("fo-2026-001-batch.json")), productionProcess });
     }
     if (evidenceMatch) {
       if (evidenceMatch[1] !== "FO-2026-001") return sendJson(res, 404, { error: "batch not found" });
@@ -219,6 +244,10 @@ async function handleApi(url, req, res) {
     if (journeyMatch) {
       if (journeyMatch[1] !== "FO-2026-001") return sendJson(res, 404, { error: "batch not found" });
       return sendJson(res, 200, await readJson("fo-journey.json"));
+    }
+    if (productionMatch) {
+      if (productionMatch[1] !== "FO-2026-001") return sendJson(res, 404, { error: "batch not found" });
+      return sendJson(res, 200, productionProcess);
     }
     if (metricMatch) {
       if (metricMatch[1] !== "FO-2026-001") return sendJson(res, 404, { error: "batch not found" });
