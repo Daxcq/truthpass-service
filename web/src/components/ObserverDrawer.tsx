@@ -22,8 +22,12 @@ const VERDICT_CLASS: Record<ObserverServiceView["verdict"], string> = {
   passed: "green-text",
 };
 
-export function ObserverDrawer({ open, onClose, batchId }: { open: boolean; onClose: () => void; batchId: string }) {
-  const { data, isLoading } = useQuery({ queryKey: ["observer", batchId], queryFn: () => fetchObserver(batchId), enabled: open });
+export function ObserverDrawer({ open, onClose, batchId }: { open: boolean; onClose: () => void; batchId: string | null }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["observer", batchId],
+    queryFn: () => fetchObserver(batchId ?? "FO-2026-001"),
+    enabled: open && !!batchId,
+  });
   const jev = useQuery({ queryKey: ["jev-detection"], queryFn: fetchJevDetection, enabled: open });
   const route = jev.data?.answers.route;
   const scope = jev.data?.answers.evidence_scope;
@@ -41,7 +45,9 @@ export function ObserverDrawer({ open, onClose, batchId }: { open: boolean; onCl
           <button className="close-button" onClick={onClose} aria-label="关闭">×</button>
         </div>
         <p className="drawer-intro">网页只是同一条 CLI 验证链的可视化投影。每一步都可以回到事件、规则和哈希。</p>
-        {isLoading || !data ? (
+        {!batchId ? (
+          <p style={{ color: "var(--muted)" }}>暂无验证任务，请先在左侧完成一次批次验证。</p>
+        ) : isLoading || !data ? (
           <p style={{ color: "var(--muted)" }}>正在读取服务与验收状态…</p>
         ) : (
           <>

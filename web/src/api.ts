@@ -72,6 +72,7 @@ export interface ObserverData {
 export const fetchObserver = (batchId: string) => getJson<ObserverData>(`/api/observer?batchId=${batchId}`);
 
 export async function postFeedback(
+  batchId: string,
   rating: number,
   categories: string[],
   comment?: string,
@@ -79,7 +80,7 @@ export async function postFeedback(
   const res = await fetch("/api/feedback", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ rating, categories, comment }),
+    body: JSON.stringify({ batchId, rating, categories, comment }),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return (await res.json()) as { ok: boolean; contributionPoints: number; evidenceHash: string };

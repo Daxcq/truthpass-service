@@ -217,12 +217,14 @@ for (const [card, mode] of services) registry.register(card, adapterFor(card, mo
 // ---------- 消费者共建 ----------
 const consumers = new ConsumerParticipationRegistry();
 const consumerId = "consumer-demo-001";
-await consumers.grantConsent({
-  consumerId,
-  batchId: BATCH_ID,
-  scopes: ["purchase", "packaging", "odor", "storage", "quality-feedback"],
-  grantedAt: "2026-10-06T12:00:00Z",
-});
+for (const batchId of Object.keys(FISH_OIL_BATCHES)) {
+  await consumers.grantConsent({
+    consumerId,
+    batchId,
+    scopes: ["purchase", "packaging", "odor", "storage", "quality-feedback"],
+    grantedAt: "2026-10-06T12:00:00Z",
+  });
+}
 
 // ---------- HTTP 工具 ----------
 function sendJson(res: ServerResponse, status: number, data: unknown): void {
@@ -471,12 +473,14 @@ async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): P
 
   if (p === "/api/feedback" && req.method === "POST") {
     const body = await readBody(req);
+    const batchId = typeof body.batchId === "string" ? body.batchId : BATCH_ID;
+    const b = FISH_OIL_BATCHES[batchId] ?? FISH_OIL_BATCHES[BATCH_ID];
     const rating = Number(body.rating || 5);
     const categories = Array.isArray(body.categories) ? (body.categories as string[]) : [];
     const comment = typeof body.comment === "string" ? body.comment.trim() : "";
     const freshPurchase = await consumers.recordPurchase({
       consumerId,
-      batchId: BATCH_ID,
+      batchId,
       purchaseProofHash: `demo-purchase-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       createdAt: new Date().toISOString(),
     });
@@ -490,10 +494,16 @@ async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): P
       await mailer.sendMail({
         from: `"TruthPass" <${process.env.SMTP_USER}>`,
         to: process.env.FEEDBACK_EMAIL,
-        subject: `TruthPass 消费者质量反馈 · ${BATCH_ID}`,
+        subject: `TruthPass 消费者质量反馈 · ${batchId}`,
         text: [
-          `批次号：${BATCH_ID}`,
-          `商品：${fishOilProduct.name}`,
+          `批次号：${batchId}`,
+          `商品：${b.name}`,
+          `验证结论：${b.passed ? "通过验收" : "未通过验收"}`,
+          `产地：${b.origin}`,
+          `生产日期：${b.productionDate}`,
+          `EPA+DHA：${b.epaDha}%（≥70%）`,
+          `过氧化值：${b.peroxide} meq/kg（≤5）`,
+          `冷链中断：${b.coldGap} 小时（≤6）`,
           `评分：${Math.min(5, Math.max(1, rating))}`,
           `反馈标签：${categories.length ? categories.join("、") : "无"}`,
           `补充反馈：${comment || "无"}`,

@@ -13,7 +13,7 @@ export default function App() {
   const [toast, setToast] = useState<string | null>(null);
   const [observerOpen, setObserverOpen] = useState(false);
   const [verifyState, setVerifyState] = useState<VerifyState>("idle");
-  const [batchId, setBatchId] = useState("FO-2026-001");
+  const [batchId, setBatchId] = useState<string | null>(null);
   const toastTimer = useRef<number | undefined>(undefined);
 
   const showToast = (msg: string) => {
@@ -37,8 +37,8 @@ export default function App() {
           onDone={() => setVerifyState("done")}
           onBatch={(id) => setBatchId(id)}
         />
-        <ProductPanel state={verifyState} batchId={batchId} />
-        <EvidencePanel state={verifyState} batchId={batchId} />
+        <ProductPanel state={verifyState} batchId={batchId ?? ""} />
+        <EvidencePanel state={verifyState} batchId={batchId ?? ""} />
       </main>
       <Community onToast={showToast} batchId={batchId} />
       <ObserverDrawer open={observerOpen} onClose={() => setObserverOpen(false)} batchId={batchId} />

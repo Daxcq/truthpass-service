@@ -2,7 +2,7 @@ import { useState } from "react";
 import { postFeedback } from "../api";
 import { FEEDBACK_TAGS } from "../data";
 
-export function Community({ onToast, batchId }: { onToast: (msg: string) => void; batchId: string }) {
+export function Community({ onToast, batchId }: { onToast: (msg: string) => void; batchId: string | null }) {
   const [consent, setConsent] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
   const [rating, setRating] = useState(0);
@@ -13,10 +13,10 @@ export function Community({ onToast, batchId }: { onToast: (msg: string) => void
     setTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
 
   const submit = async () => {
-    if (!consent || submitting) return;
+    if (!batchId || !consent || submitting) return;
     setSubmitting(true);
     try {
-      const result = await postFeedback(rating || 5, tags, comment.trim() || undefined);
+      const result = await postFeedback(batchId, rating || 5, tags, comment.trim() || undefined);
       onToast(`已提交反馈，获得 ${result.contributionPoints} 点共建积分 · 哈希 ${result.evidenceHash.slice(0, 10)}…`);
       setConsent(false);
       setTags([]);
@@ -79,13 +79,14 @@ export function Community({ onToast, batchId }: { onToast: (msg: string) => void
                 ◌
               </span>
               <div className="consent-text">
-                <strong>授权 {batchId} 的质量反馈</strong>
-                <small>你可以随时撤销，不上传健康数据</small>
+                <strong>{batchId ? `授权 ${batchId} 的质量反馈` : "暂无可反馈批次"}</strong>
+                <small>{batchId ? "你可以随时撤销，不上传健康数据" : "请先在左侧完成一次批次验证"}</small>
               </div>
               <label className="switch">
                 <input
                   type="checkbox"
                   checked={consent}
+                  disabled={!batchId}
                   onChange={(e) => setConsent(e.target.checked)}
                   aria-label="授权质量反馈"
                 />
@@ -99,7 +100,7 @@ export function Community({ onToast, batchId }: { onToast: (msg: string) => void
                   key={tag}
                   className={tags.includes(tag) ? "feedback-tag active" : "feedback-tag"}
                   type="button"
-                  disabled={!consent}
+                  disabled={!batchId || !consent}
                   onClick={() => toggleTag(tag)}
                 >
                   {tag}
@@ -115,7 +116,7 @@ export function Community({ onToast, batchId }: { onToast: (msg: string) => void
                     key={n}
                     className={n <= rating ? "star active" : "star"}
                     type="button"
-                    disabled={!consent}
+                    disabled={!batchId || !consent}
                     onClick={() => setRating(n)}
                     aria-label={`${n} 星`}
                   >
@@ -128,7 +129,7 @@ export function Community({ onToast, batchId }: { onToast: (msg: string) => void
             <textarea
               className="feedback-input"
               value={comment}
-              disabled={!consent}
+              disabled={!batchId || !consent}
               onChange={(e) => setComment(e.target.value)}
               placeholder="补充你的体验反馈（选填），例如：胶囊大小合适、无结块…"
               rows={2}
@@ -137,7 +138,7 @@ export function Community({ onToast, batchId }: { onToast: (msg: string) => void
             <button
               className="join-btn full"
               type="button"
-              disabled={!consent || submitting || rating === 0 || tags.length === 0}
+              disabled={!batchId || !consent || submitting || rating === 0 || tags.length === 0}
               onClick={submit}
             >
               <span>{submitting ? "提交中…" : "提交反馈"}</span>
