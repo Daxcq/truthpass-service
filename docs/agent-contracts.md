@@ -1,20 +1,20 @@
 # 三类业务 Agent JSON 合同 v1
 
-本文件描述 Agent 层的输入/输出协议，不表示 Agent 或 LLM 已接入。合同和运行时校验以 `src/agents/contracts.ts` 为唯一实现来源。
+本文件描述 Agent 层的输入/输出协议。生产、检测和消费者 Agent 已通过兼容接口接入 StepFun；合同和运行时校验以 `src/agents/contracts.ts` 为唯一实现来源。
 
 ## 输入
 
 - 生产 Agent：仅接收 `production` JEV view。
 - 检测 Agent：接收 `inspection` JEV view 和完整、已批准的 `PolicySnapshot`。
-- 消费者反馈 Agent：接收 `consumer_feedback` JEV view，以及去标识化反馈记录。每条反馈的 `purchaseBinding` 只能是 `registered_only` 或 `unverified`，不表示购买凭证已独立验证。
+- 消费者 Agent：接收确定性证据卡、生产/检测 Agent 的结构化辅助线索和消费者问题，只返回证据卡中的 `selectedFactIds`。
 
 所有输入携带 `schemaVersion: agent.input.v1`、role 和 batch 视图。
 
 ## 输出
 
-- 生产/检测 Agent 输出带 `sourceIds` 的 findings。
-- 消费者反馈 Agent 输出带 `sourceIds` 的 themes 和 anomalies。
-- 所有引用 ID 必须来自对应输入视图或反馈记录。
+- 生产/检测 Agent 输出带 `sourceIds` 的 findings，属于待复核辅助线索。
+- 消费者 Agent 不输出自由文本事实，只返回证据卡中的 `selectedFactIds`。
+- 最终消费者说明由确定性代码从证据卡生成，不能由模型新增事实。
 - 不允许输出 `score`、`verdict`、`riskLevel` 等最终判断字段。
 - 每条 finding 必须引用至少一个输入来源；缺失证据由确定性代码判断，不让模型自行填报。
 
@@ -29,7 +29,7 @@ npm run verify
 npm run testbench:tools
 ```
 
-本地合同面板路径为 `/agent-contracts`；只使用 `demo/synthetic` 数据，不需要 TypeSafe API Key。
+本地合同面板路径为 `/agent-contracts`；只使用 `demo/synthetic` 数据，不需要 StepFun API Key。
 
 ## 浏览器验收记录（2026-10-07）
 
