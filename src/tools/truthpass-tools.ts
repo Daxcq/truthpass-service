@@ -9,6 +9,7 @@ import type {
 import type { MemoryDataRepository } from "../data/repository.js";
 import type { ExecutionEvidence, ProductBatchAssessment, ServiceExecutionResult, TaskRequest } from "../types.js";
 import type { PolicySnapshot } from "../rules/policy.js";
+import { verifyEvidenceAttestation, type TrustedIssuerKeyResolver } from "../security/evidence-signatures.js";
 
 export class ToolBoundaryError extends Error {
   constructor(message: string, readonly code: string) {
@@ -19,10 +20,12 @@ export class ToolBoundaryError extends Error {
 export class TruthPassTools {
   #repository: MemoryDataRepository;
   #role: JevRole;
+  #resolveTrustedKey?: TrustedIssuerKeyResolver;
 
-  constructor(repository: MemoryDataRepository, role: JevRole) {
+  constructor(repository: MemoryDataRepository, role: JevRole, resolveTrustedKey?: TrustedIssuerKeyResolver) {
     this.#repository = repository;
     this.#role = role;
+    this.#resolveTrustedKey = resolveTrustedKey;
   }
 
   getBatch(input: { batchId: string }): BatchRecord {
@@ -84,9 +87,10 @@ export class TruthPassTools {
     if (!record) throw new ToolBoundaryError("已登记证据不存在", "EVIDENCE_NOT_FOUND");
     if (record.status === "revoked") throw new ToolBoundaryError("证据已撤销", "EVIDENCE_REVOKED");
     if (record.kind !== "inspection") throw new ToolBoundaryError("验收工具只接受 inspection 证据", "EVIDENCE_KIND_INVALID");
-    if (record.dataMode !== "demo/synthetic") {
-      throw new ToolBoundaryError("外部证据尚未接入密码学签名验证", "SIGNATURE_VERIFICATION_UNAVAILABLE");
-    }
+    const signatureVerified = record.dataMode === "external"
+      ? this.#resolveTrustedKey !== undefined && verifyEvidenceAttestation(record, this.#resolveTrustedKey)
+      : record.dataMode === "demo/synthetic" && payloadSignatureFlag(record.payload);
+    if (!signatureVerified) throw new ToolBoundaryError("证据签名缺失、无效或签发方密钥不受信任", "EVIDENCE_SIGNATURE_INVALID");
     if (record.batchId !== task.batchId) throw new ToolBoundaryError("证据不属于任务批次", "BATCH_MISMATCH");
 
     const batch = this.#repository.getBatch(record.batchId);
@@ -97,7 +101,7 @@ export class TruthPassTools {
         throw new ToolBoundaryError("inspection payload 缺少合法 " + key, "EVIDENCE_PAYLOAD_INVALID");
       }
     }
-    if (!isFiniteNumber(payload.logisticsGapHours) || typeof payload.signatureValid !== "boolean") {
+    if (!isFiniteNumber(payload.logisticsGapHours)) {
       throw new ToolBoundaryError("inspection payload 缺少合法履约字段", "EVIDENCE_PAYLOAD_INVALID");
     }
     for (const key of ["epaDhaPercent", "peroxideValue", "totox", "coldChainGapHours"] as const) {
@@ -114,7 +118,7 @@ export class TruthPassTools {
       productionTime: batch.productionAt,
       reportTime: record.occurredAt,
       logisticsGapHours: payload.logisticsGapHours,
-      signatureValid: payload.signatureValid,
+      signatureValid: signatureVerified,
       epaDhaPercent: payload.epaDhaPercent as number | undefined,
       peroxideValue: payload.peroxideValue as number | undefined,
       totox: payload.totox as number | undefined,
@@ -126,4 +130,8 @@ export class TruthPassTools {
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
+}
+
+function payloadSignatureFlag(payload: Record<string, unknown>): boolean {
+  return payload.signatureValid === true;
 }

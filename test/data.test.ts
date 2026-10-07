@@ -22,6 +22,7 @@ test("rejects invalid records before persistence", () => {
   assert.equal(validateProduct({ ...fishOilProduct, productId: "" }).ok, false);
   assert.equal(validateBatch({ ...fishOilBatch, productionAt: "not-a-date" }).ok, false);
   assert.equal(validateEvidence({ ...fishOilEvidence[0], kind: "unknown" }).ok, false);
+  assert.equal(validateEvidence({ ...fishOilEvidence[0], attestation: { algorithm: "RSA", keyId: "key-1", signature: "fake" } }).ok, false);
 });
 
 test("enforces product, batch, and evidence foreign-key boundaries", async () => {

@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { generateKeyPairSync, sign } from "node:crypto";
 import test from "node:test";
 import { fishOilBatch, fishOilEvidence, fishOilProduct } from "../src/data/fixtures.js";
 import { MemoryDataRepository } from "../src/data/repository.js";
 import { TruthPassTools, ToolBoundaryError } from "../src/tools/truthpass-tools.js";
 import type { JevRole } from "../src/jev/model.js";
 import type { ExecutionEvidence, TaskRequest } from "../src/types.js";
+import { evidenceSigningPayload } from "../src/security/evidence-signatures.js";
 
 async function setup(role: JevRole = "inspection", includeTaskReport = false): Promise<TruthPassTools> {
   const repository = new MemoryDataRepository();
@@ -173,7 +175,7 @@ test("assessment tools reject unregistered evidence kinds and malformed numeric 
   );
 });
 
-test("tools reject external evidence until cryptographic signature verification exists", async () => {
+test("tools reject external evidence without a trusted cryptographic signature", async () => {
   const repository = new MemoryDataRepository();
   repository.createProduct(fishOilProduct);
   repository.createBatch(fishOilBatch);
@@ -191,8 +193,30 @@ test("tools reject external evidence until cryptographic signature verification 
   const tools = new TruthPassTools(repository, "inspection");
   await assert.rejects(
     () => tools.assessProductBatch({ task, evidenceId: "ev-external-unverified" }),
-    (error) => error instanceof ToolBoundaryError && error.code === "SIGNATURE_VERIFICATION_UNAVAILABLE",
+    (error) => error instanceof ToolBoundaryError && error.code === "EVIDENCE_SIGNATURE_INVALID",
   );
+});
+
+test("tools verify external evidence signatures before deterministic assessment", async () => {
+  const repository = new MemoryDataRepository();
+  repository.createProduct(fishOilProduct);
+  repository.createBatch(fishOilBatch);
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  const publicKeyPem = publicKey.export({ type: "spki", format: "pem" }).toString();
+  const evidenceInput = {
+    schemaVersion: "evidence.v1" as const, evidenceId: "ev-signed-report", batchId: task.batchId, kind: "inspection" as const,
+    issuerId: "trusted-lab", sourceKind: "third_party" as const, occurredAt: "2026-10-06T10:00:00Z", dataMode: "external" as const,
+    payload: { taskId: task.taskId, reportBatchId: task.batchId, logisticsGapHours: 1, epaDhaPercent: 78, peroxideValue: 2, totox: 10, coldChainGapHours: 1 },
+  };
+  const keyId = "trusted-lab-key-1";
+  const signature = sign(null, Buffer.from(evidenceSigningPayload(evidenceInput, keyId)), privateKey).toString("base64");
+  await repository.addEvidence({ ...evidenceInput, attestation: { algorithm: "Ed25519", keyId, signature } });
+  const tools = new TruthPassTools(repository, "inspection", (issuerId, resolvedKeyId) =>
+    issuerId === "trusted-lab" && resolvedKeyId === keyId ? publicKeyPem : undefined,
+  );
+
+  const result = await tools.assessProductBatch({ task, evidenceId: evidenceInput.evidenceId });
+  assert.equal(result.status, "accepted");
 });
 
 test("tools reject a task that disables required service-signature verification", async () => {

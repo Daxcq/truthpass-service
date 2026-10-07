@@ -46,5 +46,17 @@ export function validateEvidence(value: unknown): ValidationResult {
   if (!validDate(evidence.occurredAt)) errors.push("occurredAt 必须是有效时间");
   if (!evidence.payload || typeof evidence.payload !== "object" || Array.isArray(evidence.payload)) errors.push("payload 必须是对象");
   if (evidence.dataMode !== "demo/synthetic" && evidence.dataMode !== "external") errors.push("dataMode 不合法");
+  if (evidence.attestation !== undefined) {
+    const attestation = evidence.attestation as unknown;
+    if (!attestation || typeof attestation !== "object" || Array.isArray(attestation)) {
+      errors.push("attestation 必须是对象");
+    } else {
+      const fields = attestation as Record<string, unknown>;
+      if (Object.keys(fields).some((key) => !["algorithm", "keyId", "signature"].includes(key))) errors.push("attestation 包含未知字段");
+      if (fields.algorithm !== "Ed25519") errors.push("attestation.algorithm 必须为 Ed25519");
+      if (!nonEmpty(fields.keyId)) errors.push("attestation.keyId 不能为空");
+      if (typeof fields.signature !== "string" || !/^[A-Za-z0-9+/]{86}==$/.test(fields.signature)) errors.push("attestation.signature 必须是 Ed25519 Base64 签名");
+    }
+  }
   return { ok: errors.length === 0, errors };
 }

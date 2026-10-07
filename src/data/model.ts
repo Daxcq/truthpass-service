@@ -10,6 +10,12 @@ export type EvidenceKind =
 export type SourceKind = "manufacturer" | "third_party" | "platform_device" | "consumer";
 export type EvidenceStatus = "submitted" | "revoked";
 
+export interface EvidenceAttestation {
+  algorithm: "Ed25519";
+  keyId: string;
+  signature: string;
+}
+
 export interface ProductRecord {
   schemaVersion: "product.v1";
   productId: string;
@@ -40,6 +46,7 @@ export interface NewEvidenceRecord {
   occurredAt: string;
   payload: Record<string, unknown>;
   dataMode: DataMode;
+  attestation?: EvidenceAttestation;
 }
 
 export interface EvidenceRecord extends NewEvidenceRecord {
