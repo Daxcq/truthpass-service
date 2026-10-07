@@ -22,8 +22,8 @@ const VERDICT_CLASS: Record<ObserverServiceView["verdict"], string> = {
   passed: "green-text",
 };
 
-export function ObserverDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { data, isLoading } = useQuery({ queryKey: ["observer"], queryFn: fetchObserver, enabled: open });
+export function ObserverDrawer({ open, onClose, batchId }: { open: boolean; onClose: () => void; batchId: string }) {
+  const { data, isLoading } = useQuery({ queryKey: ["observer", batchId], queryFn: () => fetchObserver(batchId), enabled: open });
   const jev = useQuery({ queryKey: ["jev-detection"], queryFn: fetchJevDetection, enabled: open });
   const route = jev.data?.answers.route;
   const scope = jev.data?.answers.evidence_scope;

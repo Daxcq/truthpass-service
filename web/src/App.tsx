@@ -41,7 +41,7 @@ export default function App() {
         <EvidencePanel state={verifyState} batchId={batchId} />
       </main>
       <Community onToast={showToast} batchId={batchId} />
-      <ObserverDrawer open={observerOpen} onClose={() => setObserverOpen(false)} />
+      <ObserverDrawer open={observerOpen} onClose={() => setObserverOpen(false)} batchId={batchId} />
       {toast && (
         <div className="toast" role="status">
           {toast}

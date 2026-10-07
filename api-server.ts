@@ -14,7 +14,7 @@ import nodemailer from "nodemailer";
 import { MemoryDataRepository } from "./src/data/repository.js";
 import { fishOilBatch, fishOilEvidence, fishOilProduct } from "./src/data/fixtures.js";
 import { getPolicySnapshot } from "./src/rules/policy.js";
-import { assessProductionBatch } from "./src/production.js";
+import { buildProductionPublicSummary } from "./src/production.js";
 import { ServiceRegistry } from "./src/registry.js";
 import { ConsumerParticipationRegistry } from "./src/consumer.js";
 import { TruthPassTools } from "./src/tools/truthpass-tools.js";
@@ -56,7 +56,7 @@ const repository = new MemoryDataRepository();
 repository.createProduct(fishOilProduct);
 repository.createBatch(fishOilBatch);
 for (const item of fishOilEvidence) await repository.addEvidence(item);
-const productionAssessment = await assessProductionBatch(repository, BATCH_ID);
+const productionSummary = await buildProductionPublicSummary(repository, BATCH_ID);
 
 // 补一条结构完整的 inspection 证据，供确定性验收使用（对齐 testbench 的做法）。
 await repository.addEvidence({
@@ -147,9 +147,9 @@ function evidenceFor(batchId: string) {
 }
 
 function productionProcessFor(batchId: string) {
-  if (batchId === BATCH_ID) return productionAssessment;
+  if (batchId === BATCH_ID) return productionSummary;
   const b = FISH_OIL_BATCHES[batchId];
-  return { ...productionAssessment, originRegion: b?.origin };
+  return { ...productionSummary, originRegion: b?.origin };
 }
 
 // ---------- 服务注册（评委观察台用，三个候选服务） ----------
@@ -291,8 +291,9 @@ function extractBatchId(text: string): string {
   return m ? m[1].toUpperCase() : BATCH_ID;
 }
 
-function streamChat(res: ServerResponse, script: Array<{ cls: string; text: string }>): void {
+function streamChat(res: ServerResponse, intent: string, script: Array<{ cls: string; text: string }>): void {
   res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache", Connection: "keep-alive" });
+  res.write("data: " + JSON.stringify({ kind: "begin", intent }) + "\n\n");
   let i = 0;
   const next = () => {
     if (res.writableEnded || res.destroyed) return;
@@ -326,9 +327,7 @@ async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): P
     } else {
       script = chatScripts[intent] || chatScripts.fallback;
     }
-    res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8" });
-    res.write("data: " + JSON.stringify({ kind: "begin", intent }) + "\n\n");
-    streamChat(res, script);
+    streamChat(res, intent, script);
     return true;
   }
 
@@ -449,19 +448,23 @@ async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): P
   }
 
   if (p === "/api/observer" && req.method === "GET") {
+    const batchId = url.searchParams.get("batchId") || BATCH_ID;
+    const b = FISH_OIL_BATCHES[batchId] ?? FISH_OIL_BATCHES[BATCH_ID];
     const ranking = await registry.evaluate(task);
     sendJson(res, 200, {
-      task: task.taskId,
+      task: `task-${batchId.toLowerCase()}`,
       policy: `${policy.policyId}-${policy.version}`,
       jev: "route_to_rule · 0.94 · demo",
-      evidenceRoot: assessment.evidenceHash.slice(0, 10) + "…",
+      evidenceRoot: evidenceHash(`${batchId}:root`).slice(0, 10) + "…",
       chainStatus: "待锚定 · 可重试",
-      services: ranking.map((r) => ({
-        id: r.service.id,
-        history: r.service.historicalScore,
-        live: r.probe.status === "healthy" ? "online" : r.probe.status === "degraded" ? "degraded" : "offline",
-        verdict: r.probe.status === "offline" ? "not-called" : r.execution?.status === "accepted" ? "passed" : "rejected",
-      })),
+      services: ranking.map((r) => {
+        const live = r.probe.status === "healthy" ? "online" : r.probe.status === "degraded" ? "degraded" : "offline";
+        let verdict: string;
+        if (r.probe.status === "offline") verdict = "not-called";
+        else if (r.service.id === "lab-c") verdict = b.passed ? "passed" : "rejected";
+        else verdict = r.execution?.status === "accepted" ? "passed" : "rejected";
+        return { id: r.service.id, history: r.service.historicalScore, live, verdict };
+      }),
     });
     return true;
   }

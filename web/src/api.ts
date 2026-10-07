@@ -69,7 +69,7 @@ export interface ObserverData {
   services: ObserverServiceView[];
 }
 
-export const fetchObserver = () => getJson<ObserverData>("/api/observer");
+export const fetchObserver = (batchId: string) => getJson<ObserverData>(`/api/observer?batchId=${batchId}`);
 
 export async function postFeedback(
   rating: number,
