@@ -1,9 +1,23 @@
 import { createPublicKey, verify } from "node:crypto";
 import { canonicalJson } from "../data/canonical.js";
-import type { EvidenceRecord } from "../data/model.js";
+import type { EvidenceAttestation, EvidenceRecord } from "../data/model.js";
 import type { ExecutionEvidence } from "../types.js";
 
 export type TrustedIssuerKeyResolver = (issuerId: string, keyId: string) => string | undefined;
+
+export interface ReplayGuard {
+  reserve(key: string): boolean | Promise<boolean>;
+}
+
+export class InMemoryReplayGuard implements ReplayGuard {
+  #used = new Set<string>();
+
+  reserve(key: string): boolean {
+    if (this.#used.has(key)) return false;
+    this.#used.add(key);
+    return true;
+  }
+}
 
 export interface TrustedIssuerPublicKey {
   issuerId: string;
@@ -44,7 +58,18 @@ export class TrustedIssuerKeyRegistry {
   }
 }
 
-export function evidenceSigningPayload(evidence: Pick<EvidenceRecord, "schemaVersion" | "evidenceId" | "batchId" | "kind" | "issuerId" | "sourceKind" | "occurredAt" | "payload" | "dataMode">, keyId: string): string {
+type AttestationClaims = Pick<EvidenceAttestation, "keyId" | "nonce" | "expiresAt">;
+
+function validFreshClaims(claims: AttestationClaims): boolean {
+  const expiresAt = Date.parse(claims.expiresAt);
+  return /^[a-f0-9]{32}$/.test(claims.nonce) && Number.isFinite(expiresAt) && expiresAt > Date.now();
+}
+
+export function attestationReplayKey(scope: string, claims: AttestationClaims): string {
+  return `${scope}:${claims.keyId}:${claims.nonce}`;
+}
+
+export function evidenceSigningPayload(evidence: Pick<EvidenceRecord, "schemaVersion" | "evidenceId" | "batchId" | "kind" | "issuerId" | "sourceKind" | "occurredAt" | "payload" | "dataMode">, claims: AttestationClaims): string {
   return canonicalJson({
     schemaVersion: evidence.schemaVersion,
     evidenceId: evidence.evidenceId,
@@ -55,20 +80,22 @@ export function evidenceSigningPayload(evidence: Pick<EvidenceRecord, "schemaVer
     occurredAt: evidence.occurredAt,
     payload: evidence.payload,
     dataMode: evidence.dataMode,
-    keyId,
+    keyId: claims.keyId,
+    nonce: claims.nonce,
+    expiresAt: claims.expiresAt,
   });
 }
 
 export function verifyEvidenceAttestation(evidence: EvidenceRecord, resolveTrustedKey: TrustedIssuerKeyResolver): boolean {
   const attestation = evidence.attestation;
-  if (!attestation || attestation.algorithm !== "Ed25519" || !attestation.keyId) return false;
+  if (!attestation || attestation.algorithm !== "Ed25519" || !attestation.keyId || !validFreshClaims(attestation)) return false;
 
   try {
     const publicKey = resolveTrustedKey(evidence.issuerId, attestation.keyId);
     if (!publicKey) return false;
     return verify(
       null,
-      Buffer.from(evidenceSigningPayload(evidence, attestation.keyId)),
+      Buffer.from(evidenceSigningPayload(evidence, attestation)),
       createPublicKey(publicKey),
       Buffer.from(attestation.signature, "base64"),
     );
@@ -77,7 +104,7 @@ export function verifyEvidenceAttestation(evidence: EvidenceRecord, resolveTrust
   }
 }
 
-export function executionEvidenceSigningPayload(evidence: ExecutionEvidence, keyId: string): string {
+export function executionEvidenceSigningPayload(evidence: ExecutionEvidence, claims: AttestationClaims): string {
   return canonicalJson({
     schemaVersion: "execution.evidence.v1",
     evidenceMode: "external",
@@ -93,20 +120,22 @@ export function executionEvidenceSigningPayload(evidence: ExecutionEvidence, key
     totox: evidence.totox,
     coldChainGapHours: evidence.coldChainGapHours,
     payload: evidence.payload,
-    keyId,
+    keyId: claims.keyId,
+    nonce: claims.nonce,
+    expiresAt: claims.expiresAt,
   });
 }
 
 export function verifyExecutionEvidenceAttestation(evidence: ExecutionEvidence, resolveTrustedKey: TrustedIssuerKeyResolver): boolean {
   const attestation = evidence.attestation;
-  if (!attestation || attestation.algorithm !== "Ed25519" || !attestation.keyId) return false;
+  if (!attestation || attestation.algorithm !== "Ed25519" || !attestation.keyId || !validFreshClaims(attestation)) return false;
 
   try {
     const publicKey = resolveTrustedKey(evidence.serviceId, attestation.keyId);
     if (!publicKey) return false;
     return verify(
       null,
-      Buffer.from(executionEvidenceSigningPayload(evidence, attestation.keyId)),
+      Buffer.from(executionEvidenceSigningPayload(evidence, attestation)),
       createPublicKey(publicKey),
       Buffer.from(attestation.signature, "base64"),
     );

@@ -3,7 +3,7 @@ import { generateKeyPairSync, sign } from "node:crypto";
 import test from "node:test";
 import { ServiceRegistry } from "../src/registry.js";
 import type { ExecutionEvidence, ServiceAdapter, ServiceCard, TaskRequest } from "../src/types.js";
-import { executionEvidenceSigningPayload, TrustedIssuerKeyRegistry } from "../src/security/evidence-signatures.js";
+import { executionEvidenceSigningPayload, InMemoryReplayGuard, TrustedIssuerKeyRegistry } from "../src/security/evidence-signatures.js";
 
 const task: TaskRequest = {
   taskId: "route-task",
@@ -106,8 +106,9 @@ test("accepts external service evidence only after issuer signature verification
     signatureValid: true, epaDhaPercent: 78, peroxideValue: 2, totox: 10, coldChainGapHours: 1,
     payload: { report: "lab report" },
   };
-  const signature = sign(null, Buffer.from(executionEvidenceSigningPayload(evidence, keyId)), privateKey).toString("base64");
-  const signedEvidence = { ...evidence, attestation: { algorithm: "Ed25519" as const, keyId, signature } };
+  const claims = { keyId, nonce: "c".repeat(32), expiresAt: "2026-12-31T23:59:59Z" };
+  const signature = sign(null, Buffer.from(executionEvidenceSigningPayload(evidence, claims)), privateKey).toString("base64");
+  const signedEvidence = { ...evidence, attestation: { algorithm: "Ed25519" as const, ...claims, signature } };
   const service = card("external-lab", 90);
   const adapter: ServiceAdapter = {
     async probe() { return { serviceId: service.id, status: "healthy", latencyMs: 1, capabilityMatch: true, schemaValid: true, checkedAt: "2026-10-06T08:00:00Z" }; },
@@ -116,11 +117,38 @@ test("accepts external service evidence only after issuer signature verification
   const keys = new TrustedIssuerKeyRegistry([{
     issuerId: service.id, keyId, publicKeyPem: publicKey.export({ type: "spki", format: "pem" }).toString(),
   }]);
-  const registry = new ServiceRegistry(keys.resolve);
+  const registry = new ServiceRegistry(keys.resolve, new InMemoryReplayGuard());
   registry.register(service, adapter, "external");
 
   const [result] = await registry.evaluate(task);
 
   assert.equal(result?.execution?.checks.signatureValid, true);
   assert.equal(result?.eligible, true);
+});
+
+test("rejects replaying the same signed external service evidence", async () => {
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  const keyId = "replay-lab-key-1";
+  const evidence: ExecutionEvidence = {
+    serviceId: "replay-lab", taskId: task.taskId, batchId: task.batchId, reportBatchId: task.batchId,
+    productionTime: task.productionTime, reportTime: "2026-10-06T10:00:00Z", logisticsGapHours: 1,
+    epaDhaPercent: 78, peroxideValue: 2, totox: 10, coldChainGapHours: 1, payload: { report: "same report" },
+  };
+  const claims = { keyId, nonce: "f".repeat(32), expiresAt: "2026-12-31T23:59:59Z" };
+  const signature = sign(null, Buffer.from(executionEvidenceSigningPayload(evidence, claims)), privateKey).toString("base64");
+  const service = card("replay-lab", 90);
+  const adapter: ServiceAdapter = {
+    async probe() { return { serviceId: service.id, status: "healthy", latencyMs: 1, capabilityMatch: true, schemaValid: true, checkedAt: "2026-10-06T08:00:00Z" }; },
+    async execute() { return { ...evidence, attestation: { algorithm: "Ed25519" as const, ...claims, signature } }; },
+  };
+  const keys = new TrustedIssuerKeyRegistry([{ issuerId: service.id, keyId, publicKeyPem: publicKey.export({ type: "spki", format: "pem" }).toString() }]);
+  const registry = new ServiceRegistry(keys.resolve, new InMemoryReplayGuard());
+  registry.register(service, adapter, "external");
+
+  const first = (await registry.evaluate(task))[0]!;
+  const second = (await registry.evaluate(task))[0]!;
+
+  assert.equal(first.eligible, true);
+  assert.equal(second.execution?.checks.signatureValid, false);
+  assert.equal(second.eligible, false);
 });

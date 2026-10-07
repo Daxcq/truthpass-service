@@ -11,6 +11,7 @@ import { Pool } from "pg";
 import type { RankedService } from "../registry.js";
 import type { ExecutionEvidence, FeedbackRecord, ServiceAdapter, TaskRequest } from "../types.js";
 import type { ConsumerConsent, ConsumerFeedback, PurchaseRecord } from "../consumer.js";
+import type { ReplayGuard } from "../security/evidence-signatures.js";
 
 /** 包装服务适配器：把 execute 返回的原始证据旁路记录下来，供 persistDemoRun 落库。 */
 export function recordEvidence(
@@ -48,6 +49,28 @@ function getPool(): Pool {
 
 export function persistenceEnabled(): boolean {
   return process.env.DATA_BACKEND !== "memory" && Boolean(process.env.DATABASE_URL);
+}
+
+let replayTableReady: Promise<void> | undefined;
+
+/** Production replay guard. The unique key is enforced by Postgres, not process memory. */
+export function createPostgresReplayGuard(): ReplayGuard {
+  return {
+    reserve: async (replayKey) => {
+      replayTableReady ??= getPool().query(
+        `create table if not exists truthpass_evidence_replay_guard (
+           replay_key text primary key,
+           reserved_at timestamptz not null default now()
+         )`,
+      ).then(() => undefined);
+      await replayTableReady;
+      const result = await getPool().query(
+        `insert into truthpass_evidence_replay_guard (replay_key) values ($1) on conflict (replay_key) do nothing returning replay_key`,
+        [replayKey],
+      );
+      return result.rowCount === 1;
+    },
+  };
 }
 
 export interface KnowledgeChunkRow {

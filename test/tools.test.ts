@@ -6,7 +6,7 @@ import { MemoryDataRepository } from "../src/data/repository.js";
 import { TruthPassTools, ToolBoundaryError } from "../src/tools/truthpass-tools.js";
 import type { JevRole } from "../src/jev/model.js";
 import type { ExecutionEvidence, TaskRequest } from "../src/types.js";
-import { evidenceSigningPayload, TrustedIssuerKeyRegistry } from "../src/security/evidence-signatures.js";
+import { evidenceSigningPayload, InMemoryReplayGuard, TrustedIssuerKeyRegistry } from "../src/security/evidence-signatures.js";
 
 async function setup(role: JevRole = "inspection", includeTaskReport = false): Promise<TruthPassTools> {
   const repository = new MemoryDataRepository();
@@ -229,9 +229,10 @@ test("tools verify external evidence signatures before deterministic assessment"
     payload: { taskId: task.taskId, reportBatchId: task.batchId, logisticsGapHours: 1, epaDhaPercent: 78, peroxideValue: 2, totox: 10, coldChainGapHours: 1 },
   };
   const keyId = "trusted-lab-key-1";
-  const signature = sign(null, Buffer.from(evidenceSigningPayload(evidenceInput, keyId)), privateKey).toString("base64");
-  await repository.addEvidence({ ...evidenceInput, attestation: { algorithm: "Ed25519", keyId, signature } });
-  const tools = new TruthPassTools(repository, "inspection", registry.resolve);
+  const claims = { keyId, nonce: "d".repeat(32), expiresAt: "2026-12-31T23:59:59Z" };
+  const signature = sign(null, Buffer.from(evidenceSigningPayload(evidenceInput, claims)), privateKey).toString("base64");
+  await repository.addEvidence({ ...evidenceInput, attestation: { algorithm: "Ed25519", ...claims, signature } });
+  const tools = new TruthPassTools(repository, "inspection", registry.resolve, false, new InMemoryReplayGuard());
 
   const result = await tools.assessProductBatch({ task, evidenceId: evidenceInput.evidenceId });
   assert.equal(result.status, "accepted");

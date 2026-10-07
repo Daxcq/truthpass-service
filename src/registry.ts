@@ -11,7 +11,7 @@ import type {
   EvidenceMode,
   SignatureVerification,
 } from "./types.js";
-import { verifyExecutionEvidenceAttestation, type TrustedIssuerKeyResolver } from "./security/evidence-signatures.js";
+import { attestationReplayKey, verifyExecutionEvidenceAttestation, type ReplayGuard, type TrustedIssuerKeyResolver } from "./security/evidence-signatures.js";
 
 interface RegisteredService {
   card: ServiceCard;
@@ -32,9 +32,11 @@ export class ServiceRegistry {
   private readonly services = new Map<string, RegisteredService>();
   private readonly feedback = new Map<string, FeedbackRecord>();
   private readonly resolveTrustedKey?: TrustedIssuerKeyResolver;
+  private readonly replayGuard?: ReplayGuard;
 
-  constructor(resolveTrustedKey?: TrustedIssuerKeyResolver) {
+  constructor(resolveTrustedKey?: TrustedIssuerKeyResolver, replayGuard?: ReplayGuard) {
     this.resolveTrustedKey = resolveTrustedKey;
+    this.replayGuard = replayGuard;
   }
 
   register(card: ServiceCard, adapter: ServiceAdapter, evidenceMode: EvidenceMode = "external"): void {
@@ -53,11 +55,18 @@ export class ServiceRegistry {
       let product: ProductBatchAssessment | undefined;
       if (probe.status !== "offline" && probe.capabilityMatch && probe.schemaValid) {
         const evidence = await candidate.adapter.execute(task);
-        const signatureVerification = evidence.serviceId !== candidate.card.id
+        let signatureVerification: SignatureVerification = evidence.serviceId !== candidate.card.id
           ? "invalid"
           : candidate.evidenceMode === "demo/synthetic"
             ? evidence.signatureValid === true ? "demo" : "invalid"
-            : this.resolveTrustedKey && verifyExecutionEvidenceAttestation(evidence, this.resolveTrustedKey) ? "verified" : "invalid";
+            : "invalid";
+        if (signatureVerification === "invalid" && candidate.evidenceMode === "external" && this.resolveTrustedKey && this.replayGuard && evidence.attestation && verifyExecutionEvidenceAttestation(evidence, this.resolveTrustedKey)) {
+          try {
+            signatureVerification = await this.replayGuard.reserve(attestationReplayKey(`service:${candidate.card.id}`, evidence.attestation)) ? "verified" : "invalid";
+          } catch {
+            signatureVerification = "invalid";
+          }
+        }
         execution = await verifyServiceExecution(task, evidence, signatureVerification);
         product = await assessProductBatch(task, evidence);
       }

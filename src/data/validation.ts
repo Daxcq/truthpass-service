@@ -57,9 +57,11 @@ export function validateEvidence(value: unknown): ValidationResult {
       errors.push("attestation 必须是对象");
     } else {
       const fields = attestation as Record<string, unknown>;
-      if (Object.keys(fields).some((key) => !["algorithm", "keyId", "signature"].includes(key))) errors.push("attestation 包含未知字段");
+      if (Object.keys(fields).some((key) => !["algorithm", "keyId", "nonce", "expiresAt", "signature"].includes(key))) errors.push("attestation 包含未知字段");
       if (fields.algorithm !== "Ed25519") errors.push("attestation.algorithm 必须为 Ed25519");
       if (!nonEmpty(fields.keyId)) errors.push("attestation.keyId 不能为空");
+      if (typeof fields.nonce !== "string" || !/^[a-f0-9]{32}$/.test(fields.nonce)) errors.push("attestation.nonce 必须是 32 位十六进制字符串");
+      if (typeof fields.expiresAt !== "string" || Number.isNaN(Date.parse(fields.expiresAt)) || Date.parse(fields.expiresAt) <= Date.now()) errors.push("attestation.expiresAt 必须是未来时间");
       if (typeof fields.signature !== "string" || !/^[A-Za-z0-9+/]{86}==$/.test(fields.signature)) errors.push("attestation.signature 必须是 Ed25519 Base64 签名");
     }
   }
@@ -69,7 +71,7 @@ export function validateEvidence(value: unknown): ValidationResult {
 export function validateProductionEvent(value: unknown): ValidationResult {
   const errors: string[] = [];
   if (!plainObject(value)) return { ok: false, errors: ["必须是对象"] };
-  if (!exactKeys(value, ["schemaVersion", "stage", "sequence", "startedAt", "endedAt", "inputs", "outputs", "observations", "deviations", "sourceEvidenceIds"])) errors.push("包含未定义字段");
+  if (!exactKeys(value, ["schemaVersion", "stage", "sequence", "startedAt", "endedAt", "inputs", "outputs", "observations", "deviations", "sourceEvidenceIds", "traceability"])) errors.push("包含未定义字段");
   const event = value as Partial<ProductionEvent>;
   if (event.schemaVersion !== "production.event.v1") errors.push("schemaVersion 必须为 production.event.v1");
   if (!PRODUCTION_STAGES.includes(event.stage as ProductionEvent["stage"])) errors.push("stage 不合法");
@@ -88,6 +90,7 @@ export function validateProductionEvent(value: unknown): ValidationResult {
     if (!plainObject(deviation) || !exactKeys(deviation, ["code", "description", "dispositionRef"]) || !nonEmpty(deviation.code) || !nonEmpty(deviation.description) || (deviation.dispositionRef !== undefined && !nonEmpty(deviation.dispositionRef))) errors.push("deviations[" + index + "] 无效");
   }
   if (!Array.isArray(event.sourceEvidenceIds) || event.sourceEvidenceIds.some((id) => !nonEmpty(id))) errors.push("sourceEvidenceIds 必须是字符串数组");
+  if (event.traceability !== undefined && (!plainObject(event.traceability) || !exactKeys(event.traceability, ["originRegion"]) || !nonEmpty(event.traceability.originRegion))) errors.push("traceability.originRegion 必须是非空字符串");
   return { ok: errors.length === 0, errors };
 }
 

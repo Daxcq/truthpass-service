@@ -9,7 +9,7 @@ import type {
 import type { MemoryDataRepository } from "../data/repository.js";
 import type { ExecutionEvidence, ProductBatchAssessment, ServiceExecutionResult, SignatureVerification, TaskRequest } from "../types.js";
 import type { PolicySnapshot } from "../rules/policy.js";
-import { verifyEvidenceAttestation, type TrustedIssuerKeyResolver } from "../security/evidence-signatures.js";
+import { attestationReplayKey, verifyEvidenceAttestation, type ReplayGuard, type TrustedIssuerKeyResolver } from "../security/evidence-signatures.js";
 
 export class ToolBoundaryError extends Error {
   constructor(message: string, readonly code: string) {
@@ -22,12 +22,14 @@ export class TruthPassTools {
   #role: JevRole;
   #resolveTrustedKey?: TrustedIssuerKeyResolver;
   #allowSyntheticEvidence: boolean;
+  #replayGuard?: ReplayGuard;
 
-  constructor(repository: MemoryDataRepository, role: JevRole, resolveTrustedKey?: TrustedIssuerKeyResolver, allowSyntheticEvidence = false) {
+  constructor(repository: MemoryDataRepository, role: JevRole, resolveTrustedKey?: TrustedIssuerKeyResolver, allowSyntheticEvidence = false, replayGuard?: ReplayGuard) {
     this.#repository = repository;
     this.#role = role;
     this.#resolveTrustedKey = resolveTrustedKey;
     this.#allowSyntheticEvidence = allowSyntheticEvidence;
+    this.#replayGuard = replayGuard;
   }
 
   getBatch(input: { batchId: string }): BatchRecord {
@@ -54,13 +56,13 @@ export class TruthPassTools {
 
   async verifyServiceExecution(input: { task: TaskRequest; evidenceId: string }): Promise<ServiceExecutionResult> {
     this.requireInspectionRole();
-    const loaded = this.loadExecutionEvidence(input.task, input.evidenceId);
+    const loaded = await this.loadExecutionEvidence(input.task, input.evidenceId);
     return structuredClone(await verifyServiceExecution(input.task, loaded.evidence, loaded.signatureVerification));
   }
 
   async assessProductBatch(input: { task: TaskRequest; evidenceId: string }): Promise<ProductBatchAssessment> {
     this.requireInspectionRole();
-    const loaded = this.loadExecutionEvidence(input.task, input.evidenceId);
+    const loaded = await this.loadExecutionEvidence(input.task, input.evidenceId);
     return structuredClone(await assessProductBatch(input.task, loaded.evidence));
   }
 
@@ -75,7 +77,7 @@ export class TruthPassTools {
     }
   }
 
-  private loadExecutionEvidence(task: TaskRequest, evidenceId: string): { evidence: ExecutionEvidence; signatureVerification: SignatureVerification } {
+  private async loadExecutionEvidence(task: TaskRequest, evidenceId: string): Promise<{ evidence: ExecutionEvidence; signatureVerification: SignatureVerification }> {
     if (task.acceptance.requireSignature !== true) {
       throw new ToolBoundaryError("鱼油任务必须要求服务签名验证", "TASK_POLICY_INVALID");
     }
@@ -89,9 +91,16 @@ export class TruthPassTools {
     if (!record) throw new ToolBoundaryError("已登记证据不存在", "EVIDENCE_NOT_FOUND");
     if (record.status === "revoked") throw new ToolBoundaryError("证据已撤销", "EVIDENCE_REVOKED");
     if (record.kind !== "inspection") throw new ToolBoundaryError("验收工具只接受 inspection 证据", "EVIDENCE_KIND_INVALID");
-    const signatureVerification: SignatureVerification = this.#allowSyntheticEvidence && record.dataMode === "demo/synthetic"
+    let signatureVerification: SignatureVerification = this.#allowSyntheticEvidence && record.dataMode === "demo/synthetic"
       ? payloadSignatureFlag(record.payload) ? "demo" : "invalid"
-      : this.#resolveTrustedKey !== undefined && verifyEvidenceAttestation(record, this.#resolveTrustedKey) ? "verified" : "invalid";
+      : "invalid";
+    if (signatureVerification === "invalid" && record.dataMode === "external" && this.#resolveTrustedKey && this.#replayGuard && record.attestation && verifyEvidenceAttestation(record, this.#resolveTrustedKey)) {
+      try {
+        signatureVerification = await this.#replayGuard.reserve(attestationReplayKey(`evidence:${record.issuerId}`, record.attestation)) ? "verified" : "invalid";
+      } catch {
+        signatureVerification = "invalid";
+      }
+    }
     if (signatureVerification === "invalid") throw new ToolBoundaryError("证据签名缺失、无效或签发方密钥不受信任", "EVIDENCE_SIGNATURE_INVALID");
     if (record.batchId !== task.batchId) throw new ToolBoundaryError("证据不属于任务批次", "BATCH_MISMATCH");
 

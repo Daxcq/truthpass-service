@@ -39,6 +39,10 @@ export interface ProductionDeviation {
   dispositionRef?: string;
 }
 
+export interface ProductionTraceability {
+  originRegion: string;
+}
+
 export interface ProductionEvent {
   schemaVersion: "production.event.v1";
   stage: ProductionStage;
@@ -50,11 +54,14 @@ export interface ProductionEvent {
   observations: ProductionObservation[];
   deviations: ProductionDeviation[];
   sourceEvidenceIds: string[];
+  traceability?: ProductionTraceability;
 }
 
 export interface EvidenceAttestation {
   algorithm: "Ed25519";
   keyId: string;
+  nonce: string;
+  expiresAt: string;
   signature: string;
 }
 
