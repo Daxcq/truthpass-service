@@ -1,11 +1,12 @@
 // 与后端 examples/*.json 及 src/types.ts 对齐的前端视图模型。
 
 export interface KeyMetric {
-  key: "epa-dha" | "peroxide" | "cold-chain";
-  icon: "fish" | "warning" | "snowflake";
+  key: string;
+  icon: string;
   label: string;
   value: string;
   unit: string;
+  status: "pass" | "missing";
 }
 
 export interface ProductBatch {

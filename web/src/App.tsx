@@ -4,11 +4,13 @@ import { Community } from "./components/Community";
 import { EvidencePanel } from "./components/EvidencePanel";
 import { Hero } from "./components/Hero";
 import { ModalProvider } from "./components/ModalContext";
+import { ObserverDrawer } from "./components/ObserverDrawer";
 import { ProductPanel } from "./components/ProductPanel";
 import { TopBar } from "./components/TopBar";
 
 export default function App() {
   const [toast, setToast] = useState<string | null>(null);
+  const [observerOpen, setObserverOpen] = useState(false);
   const toastTimer = useRef<number | undefined>(undefined);
 
   const showToast = (msg: string) => {
@@ -24,14 +26,15 @@ export default function App() {
         <div className="bg-fish" />
         <div className="bg-depth" />
       </div>
-      <TopBar />
+      <TopBar onOpenObserver={() => setObserverOpen(true)} />
       <Hero />
       <main className="layout">
         <ChatPanel />
         <ProductPanel />
         <EvidencePanel />
       </main>
-      <Community onJoin={() => showToast("演示版暂未开放消费者共建，敬请期待")} />
+      <Community onToast={showToast} />
+      <ObserverDrawer open={observerOpen} onClose={() => setObserverOpen(false)} />
       {toast && (
         <div className="toast" role="status">
           {toast}

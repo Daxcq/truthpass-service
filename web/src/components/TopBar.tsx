@@ -1,4 +1,4 @@
-export function TopBar() {
+export function TopBar({ onOpenObserver }: { onOpenObserver: () => void }) {
   return (
     <header className="topbar">
       <div className="brand">
@@ -15,6 +15,9 @@ export function TopBar() {
         <a href="#about">关于</a>
       </nav>
       <span className="chip">DEMO / SYNTHETIC</span>
+      <button className="ghost-button" type="button" onClick={onOpenObserver}>
+        评委观察台
+      </button>
     </header>
   );
 }

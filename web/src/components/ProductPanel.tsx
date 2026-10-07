@@ -1,9 +1,29 @@
-import { useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchMetricDetail, fetchProduct } from "../api";
 import { ICON_URLS, METRIC_BAR_PCT, RULES } from "../data";
+import { useCountUp } from "../hooks/useCountUp";
 import type { KeyMetric, MetricSource, ProductBatch } from "../types";
 import { useModal } from "./ModalContext";
+
+function parseMetricValue(value: string): { num: number | null; suffix: string; decimals: number } {
+  const m = value.match(/^([\d.]+)(.*)$/);
+  if (!m) return { num: null, suffix: value, decimals: 0 };
+  const decimals = m[1].match(/\.(\d+)/)?.[1]?.length ?? 0;
+  return { num: parseFloat(m[1]), suffix: m[2], decimals };
+}
+
+function AnimatedValue({ value }: { value: string }) {
+  const { num, suffix, decimals } = parseMetricValue(value);
+  const animated = useCountUp(num ?? 0, 1500);
+  if (num === null) return <>{value}</>;
+  return (
+    <>
+      {animated.toFixed(decimals)}
+      {suffix}
+    </>
+  );
+}
 
 function MetricSources({ sources }: { sources: MetricSource[] }) {
   return (
@@ -54,13 +74,32 @@ function MetricCard({ metric }: { metric: KeyMetric }) {
   const { openModal } = useModal();
   const pct = METRIC_BAR_PCT[metric.key] ?? 0;
   const warn = metric.key === "peroxide";
+  const missing = metric.status === "missing";
+  const [barPct, setBarPct] = useState(0);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setBarPct(pct), 120);
+    return () => window.clearTimeout(t);
+  }, [pct]);
 
   return (
-    <div className="metric-card">
+    <div className={missing ? "metric-card missing wide" : "metric-card"}>
       <button
         className="metric-q"
         title="查看来源"
-        onClick={() => openModal(`${metric.label} ${metric.value}`, <MetricDetailModal metricKey={metric.key} label={metric.label} value={metric.value} />)}
+        onClick={() =>
+          missing
+            ? openModal(
+                `${metric.label}`,
+                <div>
+                  <p style={{ marginTop: 0, color: "var(--warn)" }}>该检测项尚未覆盖。</p>
+                  <p style={{ color: "var(--muted)" }}>
+                    可继续调用独立检测服务补充报告，结果通过确定性验收后再加入证据链。
+                  </p>
+                </div>,
+              )
+            : openModal(`${metric.label} ${metric.value}`, <MetricDetailModal metricKey={metric.key} label={metric.label} value={metric.value} />)
+        }
       >
         ?
       </button>
@@ -68,9 +107,11 @@ function MetricCard({ metric }: { metric: KeyMetric }) {
         <img src={ICON_URLS[metric.icon]} alt="" />
       </div>
       <div className="metric-label">{metric.label}</div>
-      <div className={warn ? "metric-value warn" : "metric-value"}>{metric.value}</div>
+      <div className={missing ? "metric-value missing" : warn ? "metric-value warn" : "metric-value"}>
+        <AnimatedValue value={metric.value} />
+      </div>
       <div className="metric-bar">
-        <span className="metric-bar-fill" style={{ "--p": `${pct}%` } as CSSProperties} />
+        <span className="metric-bar-fill" style={{ width: `${barPct}%` } as CSSProperties} />
       </div>
       <div className="metric-unit">{metric.unit}</div>
     </div>

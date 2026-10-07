@@ -1,4 +1,20 @@
-export function Community({ onJoin }: { onJoin: () => void }) {
+import { useState } from "react";
+import { FEEDBACK_TAGS } from "../data";
+
+export function Community({ onToast }: { onToast: (msg: string) => void }) {
+  const [consent, setConsent] = useState(false);
+  const [tags, setTags] = useState<string[]>([]);
+
+  const toggleTag = (tag: string) =>
+    setTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
+
+  const submit = () => {
+    if (!consent) return;
+    onToast(`已提交反馈${tags.length ? `（${tags.join("、")}）` : ""}，获得 14 点共建积分`);
+    setConsent(false);
+    setTags([]);
+  };
+
   return (
     <>
       <section id="community" className="community">
@@ -12,6 +28,7 @@ export function Community({ onJoin }: { onJoin: () => void }) {
               <p>你的关注，让更好的食物和更透明的供应链成为可能。</p>
             </div>
           </div>
+
           <div className="community-items">
             <div className="community-item">
               <span className="ci-icon" aria-hidden="true">
@@ -41,9 +58,51 @@ export function Community({ onJoin }: { onJoin: () => void }) {
               </div>
             </div>
           </div>
-          <button className="join-btn" type="button" onClick={onJoin}>
-            我愿意参与 →
-          </button>
+
+          <div className="co-build-panel">
+            <div className="consent-row">
+              <span className="consent-icon" aria-hidden="true">
+                ◌
+              </span>
+              <div className="consent-text">
+                <strong>授权 FO-2026-001 的质量反馈</strong>
+                <small>你可以随时撤销，不上传健康数据</small>
+              </div>
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={consent}
+                  onChange={(e) => setConsent(e.target.checked)}
+                  aria-label="授权质量反馈"
+                />
+                <span />
+              </label>
+            </div>
+
+            <div className="tag-list">
+              {FEEDBACK_TAGS.map((tag) => (
+                <button
+                  key={tag}
+                  className={tags.includes(tag) ? "feedback-tag active" : "feedback-tag"}
+                  type="button"
+                  onClick={() => toggleTag(tag)}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+
+            <button
+              className="join-btn full"
+              type="button"
+              disabled={!consent}
+              onClick={submit}
+            >
+              <span>提交反馈</span>
+              <span>获得 14 点共建积分</span>
+            </button>
+            <p className="consent-foot">这是消费服务权益，不代表股权、债权或投资回报。</p>
+          </div>
         </div>
         <p className="community-note" aria-hidden="true">
           小小的参与，汇聚成更大的改变。
