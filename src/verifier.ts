@@ -5,17 +5,19 @@ import type {
   ProductBatchAssessment,
   ServiceExecutionResult,
   TaskRequest,
+  SignatureVerification,
 } from "./types.js";
 
 export async function verifyServiceExecution(
   task: TaskRequest,
   evidence: ExecutionEvidence,
+  signatureVerification: SignatureVerification = "invalid",
 ): Promise<ServiceExecutionResult> {
   const checks = {
     taskMatches: evidence.taskId === task.taskId,
     batchMatches: evidence.batchId === task.batchId && evidence.reportBatchId === task.batchId,
     reportAfterProduction: evidence.reportTime >= task.productionTime,
-    signatureValid: task.acceptance.requireSignature === true && evidence.signatureValid === true,
+    signatureValid: task.acceptance.requireSignature === true && (signatureVerification === "verified" || signatureVerification === "demo"),
   };
 
   const passed = Object.values(checks).filter(Boolean).length;
@@ -27,7 +29,7 @@ export async function verifyServiceExecution(
   if (!checks.reportAfterProduction) reasons.push("报告时间早于生产时间");
   if (!checks.signatureValid) reasons.push("结果缺少有效的服务签名");
   const status = score === 100 ? "accepted" : "rejected";
-  const evidenceHash = await sha256Hex(JSON.stringify({ kind: "service-execution", task, evidence, checks, score }));
+  const evidenceHash = await sha256Hex(JSON.stringify({ kind: "service-execution", task, evidence, signatureVerification, checks, score }));
 
   return { status, score, checks, reasons, evidenceHash };
 }

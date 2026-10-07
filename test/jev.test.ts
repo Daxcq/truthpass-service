@@ -22,6 +22,7 @@ test("builds one JEV context from the data-layer records", async () => {
     "ev-production-001",
     "ev-inspection-001",
     "ev-cold-chain-001",
+    "ev-production-002",
   ]);
   assert.equal(context.evidence[1]?.payload.epaDhaPercent, 78);
   assert.equal(context.evidence[1]?.payload.totox, 11);
@@ -33,10 +34,10 @@ test("builds different read-only views without changing the fact source", async 
   const inspection = buildJevRoleView(context, "inspection");
   const consumer = buildJevRoleView(context, "consumer_feedback");
 
-  assert.deepEqual(production.context.evidence.map((item) => item.kind), ["production"]);
+  assert.deepEqual(production.context.evidence.map((item) => item.kind), ["production", "production"]);
   assert.deepEqual(inspection.context.evidence.map((item) => item.kind), ["inspection", "cold_chain"]);
-  assert.equal(consumer.context.evidence.length, 3);
-  assert.equal(context.evidence.length, 3);
+  assert.equal(consumer.context.evidence.length, 4);
+  assert.equal(context.evidence.length, 4);
 });
 
 test("JEV output is canonical and stable across object key order", async () => {

@@ -2,11 +2,11 @@
 
 ## 已确认
 
-- API 入口：`POST /v1/run`。
-- 请求主体包含 `state`、可选 `model` 和 `questions`。
-- question 类型包括 `noul`、`choice`、`score`。
+- API 入口：`POST https://api.typesafe.ai/v1/systemone`。
+- 请求主体包含 `state`、`questions`，以及可选 `model`。
+- question 类型包括 `noul`、`choice`、`score`；`choice` 使用 `criteria` 映射选项，`score` 使用按分数顺序排列的 `criteria` 数组。
 - API key 通过 `Authorization: Bearer <API_KEY>` 发送。
-- 默认模型可使用 `jev-latest`，但当前代码允许调用方显式传入。
+- 默认模型为 `jev-latest`。
 
 ## 本地占位
 
@@ -14,9 +14,11 @@
 
 ```text
 TYPESAFE_API_KEY=
+TYPESAFE_BASE_URL=https://api.typesafe.ai
+TYPESAFE_MODEL=jev-latest
 ```
 
-当前测试只验证请求结构和 key 位置，不发起真实网络请求。
+当前测试只验证请求结构和 key 位置，不发起真实网络请求；实际调用结果位于 `answers`。
 
 ## 与本项目 JEV 的关系
 

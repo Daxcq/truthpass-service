@@ -8,6 +8,9 @@ import type { JevRole } from "../jev/model.js";
 import type { TaskRequest } from "../types.js";
 import { AgentContractError, parseAgentInput, parseAgentOutput, type AgentRole } from "../agents/contracts.js";
 import { getPolicySnapshot } from "../rules/policy.js";
+import { persistenceEnabled } from "../data/persistence.js";
+import { buildWikiAppendix, loadKnowledgeChunks } from "../knowledge/wiki.js";
+import { explainRejection } from "../knowledge/explain.js";
 
 const task: TaskRequest = {
   taskId: "task-fish-oil-2026-001",
@@ -36,7 +39,7 @@ for (const [evidenceId, batchId] of [["ev-test-report-001", task.batchId], ["ev-
 }
 
 const tools = new Map<JevRole, TruthPassTools>(
-  (["production", "inspection", "consumer_feedback"] as const).map((role) => [role, new TruthPassTools(repository, role)]),
+  (["production", "inspection", "consumer_feedback"] as const).map((role) => [role, new TruthPassTools(repository, role, undefined, true)]),
 );
 const inspectionTools = tools.get("inspection")!;
 
@@ -157,6 +160,30 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/test/assess-other-batch") {
       json(response, 200, { result: await inspectionTools.assessProductBatch({ task, evidenceId: "ev-test-report-other" }) });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/knowledge/wiki") {
+      if (!persistenceEnabled()) {
+        json(response, 200, { enabled: false, chunks: 0, appendix: "" });
+        return;
+      }
+      const chunks = await loadKnowledgeChunks();
+      json(response, 200, { enabled: true, chunks: chunks.length, appendix: buildWikiAppendix(chunks) });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/test/explain") {
+      const body = await bodyJson(request);
+      const input = { task, evidenceId: typeof body.evidenceId === "string" ? body.evidenceId : "" };
+      const execution = await inspectionTools.verifyServiceExecution(input);
+      const product = await inspectionTools.assessProductBatch(input);
+      const chunks = persistenceEnabled() ? await loadKnowledgeChunks() : [];
+      const explanation = await explainRejection(
+        { checks: { ...execution.checks, ...product.checks }, reasons: [...execution.reasons, ...product.reasons] },
+        chunks,
+      );
+      json(response, 200, { explanation });
       return;
     }
 

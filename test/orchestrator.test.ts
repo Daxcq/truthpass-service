@@ -27,7 +27,7 @@ function register(registry: ServiceRegistry, id: string, reportBatchId: string):
       return { serviceId: id, taskId: request.taskId, batchId: request.batchId, reportBatchId, productionTime: request.productionTime, reportTime: "2026-10-06T09:00:00Z", logisticsGapHours: 1, signatureValid: true, epaDhaPercent: 78, peroxideValue: 2, totox: 10, coldChainGapHours: 1, payload: { evidenceMode: "demo/synthetic" } };
     },
   };
-  registry.register(card, adapter);
+  registry.register(card, adapter, "demo/synthetic");
 }
 
 test("runs role-based workflow and records only an eligible service", async () => {

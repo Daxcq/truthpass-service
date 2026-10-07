@@ -10,6 +10,21 @@ export interface KeyMetric {
   status: "pass" | "missing" | "fail";
 }
 
+export type ProductionCoverageStatus = "observed" | "missing" | "restricted" | "not_covered";
+
+export interface ProductionPublicSummary {
+  schemaVersion: "production.public.v1";
+  dataMode: "demo/synthetic" | "external";
+  status: "conformant" | "nonconformant" | "incomplete" | "review";
+  originRegion?: string;
+  sourceKinds: Array<"manufacturer" | "third_party" | "platform_device" | "consumer">;
+  observedStageCount: number;
+  requiredStageCount: number;
+  stages: Array<{ stage: string; label: string; status: ProductionCoverageStatus }>;
+  missingStages: string[];
+  facts: Array<{ label: string; value: string; stage: string; sourceKind: string }>;
+}
+
 export interface ProductBatch {
   batchId: string;
   name: string;
@@ -24,6 +39,7 @@ export interface ProductBatch {
     scope: string;
   };
   keyMetrics: KeyMetric[];
+  productionProcess: ProductionPublicSummary;
 }
 
 export interface EvidenceStep {
@@ -86,3 +102,21 @@ export interface ChatLine {
 }
 
 export type VerifyState = "idle" | "running" | "done";
+
+export interface JevChoiceAnswer {
+  type: "choice";
+  choice: string;
+  confidence: number;
+  probabilities: Record<string, number>;
+}
+
+export interface JevDetection {
+  source: "TypeSafe JEV";
+  model: string;
+  answers: {
+    route: JevChoiceAnswer;
+    evidence_scope: JevChoiceAnswer;
+  };
+  usage: { input_tokens: number; output_tokens: number };
+  deterministicVerifier: { status: "accepted"; policy: string };
+}

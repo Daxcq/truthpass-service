@@ -4,6 +4,7 @@ import type {
   Journey,
   MetricDetail,
   ProductBatch,
+  JevDetection,
 } from "./types";
 
 export const BATCH_ID = "FO-2026-001";
@@ -19,6 +20,7 @@ export const fetchEvidenceLink = (batchId: string) => getJson<EvidenceStep[]>(`/
 export const fetchJourney = (batchId: string) => getJson<Journey>(`/api/products/${batchId}/journey`);
 export const fetchMetricDetail = (batchId: string, key: string) =>
   getJson<MetricDetail>(`/api/products/${batchId}/metrics/${key}`);
+export const fetchJevDetection = () => getJson<JevDetection>("/api/jev/detection");
 
 export async function postChat(
   question: string,

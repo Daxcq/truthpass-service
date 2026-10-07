@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchMetricDetail, fetchProduct, fetchVerification } from "../api";
 import { ICON_URLS, METRIC_BAR_PCT } from "../data";
 import { useCountUp } from "../hooks/useCountUp";
-import type { KeyMetric, MetricSource, ProductBatch, VerifyState } from "../types";
+import type { KeyMetric, MetricSource, ProductBatch, ProductionPublicSummary, VerifyState } from "../types";
 import { useModal } from "./ModalContext";
 
 function parseMetricValue(value: string): { num: number | null; suffix: string; decimals: number } {
@@ -136,6 +136,40 @@ function RulesView({ batchId }: { batchId: string }) {
         综合：{data?.status === "accepted" ? "按当前规则通过" : "未通过"}（得分 {data?.score}/100）· 证据哈希 {data?.evidenceHash.slice(0, 16)}…
       </p>
     </>
+  );
+}
+
+const SOURCE_LABELS: Record<string, string> = {
+  manufacturer: "厂家自报",
+  third_party: "第三方记录",
+  platform_device: "平台设备",
+  consumer: "消费者反馈",
+};
+
+const PROCESS_STATUS_LABELS: Record<ProductionPublicSummary["status"], string> = {
+  conformant: "过程记录完整",
+  nonconformant: "存在记录异常",
+  incomplete: "过程记录未完整",
+  review: "过程记录需复核",
+};
+
+function ProductionProcess({ process }: { process: ProductionPublicSummary }) {
+  return (
+    <section className="production-process" aria-label="生产过程公开">
+      <div className="production-process-head">
+        <div><span className="eyebrow">生产过程公开</span><strong>{PROCESS_STATUS_LABELS[process.status]}</strong></div>
+        <span className="production-process-count">已记录 {process.observedStageCount}/{process.requiredStageCount} 道工序</span>
+      </div>
+      <div className="production-facts">
+        {process.originRegion && <div><span>原料来源</span><strong>{process.originRegion}</strong></div>}
+        {process.facts.map((fact) => <div key={fact.label + fact.value}><span>{fact.label}</span><strong>{fact.value}</strong></div>)}
+      </div>
+      <div className="production-stages">
+        {process.stages.map((stage) => <span key={stage.stage} className={"production-stage " + stage.status}>{stage.label} · {stage.status === "observed" ? "已记录" : stage.status === "restricted" ? "受限" : stage.status === "missing" ? "缺失" : "未覆盖"}</span>)}
+      </div>
+      {process.missingStages.length > 0 && <p className="production-missing">尚未覆盖：{process.missingStages.join("、")}</p>}
+      <p className="production-note">来源类别：{process.sourceKinds.map((kind) => SOURCE_LABELS[kind] ?? kind).join("、")} · {process.dataMode}。过程记录不等同于成品检测合格。</p>
+    </section>
   );
 }
 
@@ -294,6 +328,8 @@ export function ProductPanel({ state, batchId }: { state: VerifyState; batchId: 
           <MetricCard key={metric.key} metric={metric} batchId={batchId} />
         ))}
       </div>
+
+      <ProductionProcess process={product.productionProcess} />
 
       <div className="scope-bar">
         <span className="scope-label">适用范围</span>

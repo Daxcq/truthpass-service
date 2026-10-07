@@ -1,7 +1,13 @@
 import { ServiceRegistry } from "./registry.js";
 import { ConsumerParticipationRegistry } from "./consumer.js";
 import { runVerificationWorkflow } from "./orchestrator.js";
-import type { ServiceAdapter, ServiceCard, TaskRequest } from "./types.js";
+import { closePersistence, persistenceEnabled, persistDemoRun, recordEvidence } from "./data/persistence.js";
+import { explainRejection } from "./knowledge/explain.js";
+import { loadKnowledgeChunks } from "./knowledge/wiki.js";
+import type { ExecutionEvidence, ServiceAdapter, ServiceCard, TaskRequest } from "./types.js";
+
+// 组合根旁路记录各服务返回的原始证据，供持久化 Sink 写入 execution_evidence
+const evidenceLog = new Map<string, ExecutionEvidence>();
 
 const task: TaskRequest = {
   taskId: "task-fish-oil-2026-001",
@@ -107,7 +113,7 @@ const services: Array<[ServiceCard, "valid" | "wrong-batch" | "offline"]> = [
 ];
 
 const registry = new ServiceRegistry();
-for (const [card, mode] of services) registry.register(card, adapterFor(card, mode));
+for (const [card, mode] of services) registry.register(card, recordEvidence(card.id, evidenceLog, adapterFor(card, mode)), "demo/synthetic");
 
 const workflow = await runVerificationWorkflow(task, registry, "2026-10-06T12:00:00Z");
 if (workflow.status !== "completed" || !workflow.selectedServiceId || !workflow.feedback) {
@@ -119,7 +125,7 @@ const feedback = workflow.feedback;
 if (!winner) throw new Error("工作流选择的服务不在排名结果中");
 
 const consumers = new ConsumerParticipationRegistry();
-await consumers.grantConsent({
+const consent = await consumers.grantConsent({
   consumerId: "consumer-demo-001",
   batchId: task.batchId,
   scopes: ["purchase", "packaging", "odor", "storage", "quality-feedback"],
@@ -139,6 +145,49 @@ const consumerFeedback = await consumers.recordFeedback({
   createdAt: "2026-10-06T12:20:00Z",
 });
 
+let rejectionExplanations: unknown = undefined;
+if (persistenceEnabled()) {
+  try {
+    await persistDemoRun({ task, ranking: ranked, evidenceByServiceId: evidenceLog, feedback, consent, purchase, consumerFeedback });
+    console.error("[persistence] 本次演示已落库 Supabase/Postgres");
+  } catch (error) {
+    console.error("[persistence] 落库失败(不影响演示输出):", error instanceof Error ? error.message : error);
+  }
+  try {
+    const chunks = await loadKnowledgeChunks();
+    const rejected = ranked.filter((item) => !item.eligible && (item.execution || item.product));
+    const explanations = [];
+    for (const item of rejected) {
+      const evidence = evidenceLog.get([item.service.id, task.taskId].join(":"));
+      explanations.push({
+        serviceId: item.service.id,
+        ...(await explainRejection(
+          {
+            checks: { ...(item.execution?.checks ?? {}), ...(item.product?.checks ?? {}) },
+            reasons: [...(item.execution?.reasons ?? []), ...(item.product?.reasons ?? [])],
+            evidence: evidence
+              ? {
+                  epaDhaPercent: evidence.epaDhaPercent,
+                  peroxideValue: evidence.peroxideValue,
+                  totox: evidence.totox,
+                  coldChainGapHours: evidence.coldChainGapHours,
+                  reportBatchId: evidence.reportBatchId,
+                  signatureValid: evidence.signatureValid,
+                }
+              : undefined,
+          },
+          chunks,
+        )),
+      });
+    }
+    rejectionExplanations = explanations;
+    console.error("[knowledge] 拒因解释已生成: " + explanations.length + " 条");
+  } catch (error) {
+    console.error("[knowledge] 解释生成失败(不影响演示输出):", error instanceof Error ? error.message : error);
+  }
+  await closePersistence();
+}
+
 console.log(JSON.stringify({
   task,
   agentTrace: workflow.trace,
@@ -154,4 +203,5 @@ console.log(JSON.stringify({
   selectedService: winner.service.id,
   feedback,
   consumerParticipation: { purchase, feedback: consumerFeedback },
+  rejectionExplanations,
 }, null, 2));

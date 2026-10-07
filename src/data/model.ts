@@ -10,9 +10,58 @@ export type EvidenceKind =
 export type SourceKind = "manufacturer" | "third_party" | "platform_device" | "consumer";
 export type EvidenceStatus = "submitted" | "revoked";
 
+export const PRODUCTION_STAGES = [
+  "raw_material_receipt",
+  "refining",
+  "concentration",
+  "deodorization",
+  "encapsulation",
+  "packaging",
+  "storage",
+] as const;
+export type ProductionStage = typeof PRODUCTION_STAGES[number];
+
+export interface ProductionLot {
+  lotId: string;
+  quantity: number;
+  unit: string;
+}
+
+export interface ProductionObservation {
+  code: string;
+  value: number;
+  unit: string;
+}
+
+export interface ProductionDeviation {
+  code: string;
+  description: string;
+  dispositionRef?: string;
+}
+
+export interface ProductionTraceability {
+  originRegion: string;
+}
+
+export interface ProductionEvent {
+  schemaVersion: "production.event.v1";
+  stage: ProductionStage;
+  sequence: number;
+  startedAt: string;
+  endedAt: string;
+  inputs: ProductionLot[];
+  outputs: ProductionLot[];
+  observations: ProductionObservation[];
+  deviations: ProductionDeviation[];
+  sourceEvidenceIds: string[];
+  traceability?: ProductionTraceability;
+}
+
 export interface EvidenceAttestation {
   algorithm: "Ed25519";
   keyId: string;
+  nonce: string;
+  expiresAt: string;
   signature: string;
 }
 

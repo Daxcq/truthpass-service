@@ -7,17 +7,20 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { extname, join, normalize, resolve } from "node:path";
+import { extname, isAbsolute, join, normalize, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import nodemailer from "nodemailer";
 
 import { MemoryDataRepository } from "./src/data/repository.js";
 import { fishOilBatch, fishOilEvidence, fishOilProduct } from "./src/data/fixtures.js";
 import { getPolicySnapshot } from "./src/rules/policy.js";
+import { assessProductionBatch } from "./src/production.js";
 import { ServiceRegistry } from "./src/registry.js";
 import { ConsumerParticipationRegistry } from "./src/consumer.js";
-import { assessProductBatch, verifyServiceExecution } from "./src/verifier.js";
-import type { ExecutionEvidence, ServiceAdapter, ServiceCard, TaskRequest } from "./src/types.js";
+import { TruthPassTools } from "./src/tools/truthpass-tools.js";
+import { TrustedIssuerKeyRegistry, type TrustedIssuerPublicKey } from "./src/security/evidence-signatures.js";
+import { createPostgresReplayGuard, persistenceEnabled } from "./src/data/persistence.js";
+import type { ServiceAdapter, ServiceCard, TaskRequest } from "./src/types.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const WEB_DIST = join(__dirname, "web", "dist");
@@ -53,6 +56,7 @@ const repository = new MemoryDataRepository();
 repository.createProduct(fishOilProduct);
 repository.createBatch(fishOilBatch);
 for (const item of fishOilEvidence) await repository.addEvidence(item);
+const productionAssessment = await assessProductionBatch(repository, BATCH_ID);
 
 // 补一条结构完整的 inspection 证据，供确定性验收使用（对齐 testbench 的做法）。
 await repository.addEvidence({
@@ -87,25 +91,66 @@ const task: TaskRequest = {
 };
 
 const inspectionEvidence = repository.getEvidence("ev-test-report-001")!;
-const executionEvidence: ExecutionEvidence = {
-  serviceId: inspectionEvidence.issuerId,
-  taskId: task.taskId,
-  batchId: inspectionEvidence.batchId,
-  reportBatchId: String(inspectionEvidence.payload.reportBatchId),
-  productionTime: task.productionTime,
-  reportTime: inspectionEvidence.occurredAt,
-  logisticsGapHours: Number(inspectionEvidence.payload.logisticsGapHours),
-  signatureValid: Boolean(inspectionEvidence.payload.signatureValid),
-  epaDhaPercent: Number(inspectionEvidence.payload.epaDhaPercent),
-  peroxideValue: Number(inspectionEvidence.payload.peroxideValue),
-  totox: Number(inspectionEvidence.payload.totox),
-  coldChainGapHours: Number(inspectionEvidence.payload.coldChainGapHours),
-  payload: inspectionEvidence.payload,
-};
+const trustedIssuerKeys = new TrustedIssuerKeyRegistry(
+  JSON.parse(process.env.TRUTHPASS_TRUSTED_ISSUER_KEYS ?? "[]") as TrustedIssuerPublicKey[],
+);
+const replayGuard = persistenceEnabled() ? createPostgresReplayGuard() : undefined;
+const inspectionTools = new TruthPassTools(repository, "inspection", trustedIssuerKeys.resolve, true, replayGuard);
 
 const policy = getPolicySnapshot(task.acceptance.policyId, task.acceptance.policyVersion);
-const serviceExecution = await verifyServiceExecution(task, executionEvidence);
-const assessment = await assessProductBatch(task, executionEvidence);
+const assessment = await inspectionTools.assessProductBatch({ task, evidenceId: "ev-test-report-001" });
+
+// ---------- 多批次展示数据（demo 编造，001 走真实验收） ----------
+const FISH_OIL_BATCHES: Record<string, { name: string; image: string; epaDha: number; peroxide: number; totox: number; coldGap: number; productionDate: string; origin: string; passed: boolean }> = {
+  "FO-2026-001": { name: "深海鱼油软胶囊", image: "/assets/fish-oil-product.png", epaDha: 78, peroxide: 2.1, totox: 11, coldGap: 2, productionDate: "2026-01-12", origin: "北太平洋海域", passed: true },
+  "FO-2026-002": { name: "高纯度 Omega-3 鱼油", image: "/assets/fish-oil-002.png", epaDha: 82, peroxide: 1.8, totox: 9, coldGap: 1.5, productionDate: "2026-02-08", origin: "挪威海域", passed: true },
+  "FO-2026-003": { name: "儿童 DHA 鱼油滴剂", image: "/assets/fish-oil-003.png", epaDha: 90, peroxide: 1.2, totox: 6, coldGap: 3, productionDate: "2026-03-15", origin: "阿拉斯加海域", passed: true },
+  "FO-2026-004": { name: "三文鱼油胶囊", image: "/assets/fish-oil-004.png", epaDha: 75, peroxide: 6.8, totox: 14, coldGap: 2.5, productionDate: "2026-04-02", origin: "智利海域", passed: false },
+  "FO-2026-005": { name: "南极磷虾油", image: "/assets/fish-oil-005.png", epaDha: 85, peroxide: 1.5, totox: 8, coldGap: 7, productionDate: "2026-05-20", origin: "南极海域", passed: false },
+};
+
+function metricsFor(batchId: string) {
+  const b = FISH_OIL_BATCHES[batchId] ?? FISH_OIL_BATCHES[BATCH_ID];
+  return [
+    { key: "epa-dha", icon: "fish", label: "EPA+DHA", value: `${b.epaDha}%`, unit: "检测结果（占总脂肪酸）", bar: Math.min(100, b.epaDha), status: b.epaDha >= 70 ? "pass" : "fail" },
+    { key: "peroxide", icon: "warning", label: "过氧化值", value: `${b.peroxide}`, unit: "meq/kg", bar: Math.min(100, Math.round((b.peroxide / 5) * 100)), status: b.peroxide <= 5 ? "pass" : "fail" },
+    { key: "cold-chain", icon: "snowflake", label: "冷链", value: `${b.coldGap}小时`, unit: "全程温度异常时长", bar: Math.min(100, Math.round((b.coldGap / 6) * 100)), status: b.coldGap <= 6 ? "pass" : "fail" },
+    { key: "heavy-metal", icon: "alert", label: "重金属报告", value: "—", unit: "未覆盖 · 可继续调用独立检测服务", bar: 12, status: "missing" },
+  ];
+}
+
+function journeyFor(batchId: string) {
+  const b = FISH_OIL_BATCHES[batchId] ?? FISH_OIL_BATCHES[BATCH_ID];
+  return [
+    { step: 1, icon: "fish", title: "产地捕捞", desc: `${b.origin} · 纯净深海` },
+    { step: 2, icon: "sensor", title: "提炼生产", desc: `${b.productionDate} · 低温提炼灌装` },
+    { step: 3, icon: "rule", title: "第三方检测", desc: `SGS 检测报告 · EPA+DHA ${b.epaDha}%` },
+    { step: 4, icon: "snowflake", title: "全程冷链", desc: `全程低温运输 · 温度异常 ${b.coldGap} 小时` },
+    { step: 5, icon: "chain", title: "跨境到货", desc: "海关清关 · 保税仓出库" },
+  ];
+}
+
+function evidenceHash(seed: string): string {
+  return "0x" + createHash("sha256").update(seed).digest("hex").slice(0, 32);
+}
+
+function evidenceFor(batchId: string) {
+  const b = FISH_OIL_BATCHES[batchId] ?? FISH_OIL_BATCHES[BATCH_ID];
+  const stamp = `${b.productionDate}T`;
+  return [
+    { step: 1, icon: "sensor", title: "设备采集", source: "船舱传感器 · 温度 / 湿度 / 定位", description: "船上与加工环节的传感器数据，记录捕捞、加工、温度等关键信息。", hash: evidenceHash(`${batchId}:sensor`), verifiedAt: `${stamp}08:30:00Z` },
+    { step: 2, icon: "agent", title: "Agent 关联", source: "TruthPass Agent · 多源数据关联", description: "TruthPass Agent 将多源数据关联，形成可验证的证据包。", hash: evidenceHash(`${batchId}:agent`), verifiedAt: `${stamp}12:00:00Z` },
+    { step: 3, icon: "jev", title: "JEV 判别", source: "JEV 决策门 · route_to_rule · 0.94", description: "用固定类型输出识别证据缺口、冲突和下一步路由。", hash: evidenceHash(`${batchId}:jev`), verifiedAt: `${stamp}13:40:00Z` },
+    { step: 4, icon: "rule", title: "规则验收", source: `规则引擎 ${policy.policyId}@${policy.version}`, description: "按食品安全与质量规则进行自动化验收，生成结论与置信范围。", hash: evidenceHash(`${batchId}:rule`), verifiedAt: `${stamp}14:00:00Z` },
+    { step: 5, icon: "chain", title: "链上锚定", source: "链上锚定 · 不可篡改", description: "关键证据哈希上链，确保记录不可篡改、可长期验证。", hash: evidenceHash(`${batchId}:chain`), verifiedAt: `${stamp}14:05:00Z` },
+  ];
+}
+
+function productionProcessFor(batchId: string) {
+  if (batchId === BATCH_ID) return productionAssessment;
+  const b = FISH_OIL_BATCHES[batchId];
+  return { ...productionAssessment, originRegion: b?.origin };
+}
 
 // ---------- 服务注册（评委观察台用，三个候选服务） ----------
 function adapterFor(card: ServiceCard, mode: "valid" | "wrong-batch" | "offline"): ServiceAdapter {
@@ -166,8 +211,8 @@ const services: Array<[ServiceCard, "valid" | "wrong-batch" | "offline"]> = [
   ],
 ];
 
-const registry = new ServiceRegistry();
-for (const [card, mode] of services) registry.register(card, adapterFor(card, mode));
+const registry = new ServiceRegistry(trustedIssuerKeys.resolve, replayGuard);
+for (const [card, mode] of services) registry.register(card, adapterFor(card, mode), "demo/synthetic");
 
 // ---------- 消费者共建 ----------
 const consumers = new ConsumerParticipationRegistry();
@@ -178,74 +223,6 @@ await consumers.grantConsent({
   scopes: ["purchase", "packaging", "odor", "storage", "quality-feedback"],
   grantedAt: "2026-10-06T12:00:00Z",
 });
-const purchase = await consumers.recordPurchase({
-  consumerId,
-  batchId: BATCH_ID,
-  purchaseProofHash: "demo-purchase-proof-001",
-  createdAt: "2026-10-06T12:05:00Z",
-});
-
-// ---------- 视图适配（展示配置集中在这里） ----------
-const FISH_OIL_BATCHES: Record<string, { name: string; image: string; epaDha: number; peroxide: number; totox: number; coldGap: number; productionDate: string; origin: string; passed: boolean }> = {
-  "FO-2026-001": { name: "深海鱼油软胶囊", image: "/assets/fish-oil-product.png", epaDha: 78, peroxide: 2.1, totox: 11, coldGap: 2, productionDate: "2026-01-12", origin: "北太平洋海域", passed: true },
-  "FO-2026-002": { name: "高纯度 Omega-3 鱼油", image: "/assets/fish-oil-002.png", epaDha: 82, peroxide: 1.8, totox: 9, coldGap: 1.5, productionDate: "2026-02-08", origin: "挪威海域", passed: true },
-  "FO-2026-003": { name: "儿童 DHA 鱼油滴剂", image: "/assets/fish-oil-003.png", epaDha: 90, peroxide: 1.2, totox: 6, coldGap: 3, productionDate: "2026-03-15", origin: "阿拉斯加海域", passed: true },
-  "FO-2026-004": { name: "三文鱼油胶囊", image: "/assets/fish-oil-004.png", epaDha: 75, peroxide: 6.8, totox: 14, coldGap: 2.5, productionDate: "2026-04-02", origin: "智利海域", passed: false },
-  "FO-2026-005": { name: "南极磷虾油", image: "/assets/fish-oil-005.png", epaDha: 85, peroxide: 1.5, totox: 8, coldGap: 7, productionDate: "2026-05-20", origin: "南极海域", passed: false },
-};
-
-function metricsFor(batchId: string) {
-  const b = FISH_OIL_BATCHES[batchId] ?? FISH_OIL_BATCHES["FO-2026-001"];
-  return [
-    { key: "epa-dha", icon: "fish", label: "EPA+DHA", value: `${b.epaDha}%`, unit: "检测结果（占总脂肪酸）", bar: Math.min(100, b.epaDha), status: b.epaDha >= 70 ? "pass" : "fail" },
-    { key: "peroxide", icon: "warning", label: "过氧化值", value: `${b.peroxide}`, unit: "meq/kg", bar: Math.min(100, Math.round((b.peroxide / 5) * 100)), status: b.peroxide <= 5 ? "pass" : "fail" },
-    { key: "cold-chain", icon: "snowflake", label: "冷链", value: `${b.coldGap}小时`, unit: "全程温度异常时长", bar: Math.min(100, Math.round((b.coldGap / 6) * 100)), status: b.coldGap <= 6 ? "pass" : "fail" },
-    { key: "heavy-metal", icon: "alert", label: "重金属报告", value: "—", unit: "未覆盖 · 可继续调用独立检测服务", bar: 12, status: "missing" },
-  ];
-}
-
-function journeyFor(batchId: string) {
-  const b = FISH_OIL_BATCHES[batchId] ?? FISH_OIL_BATCHES["FO-2026-001"];
-  return [
-    { step: 1, icon: "fish", title: "产地捕捞", desc: `${b.origin} · 纯净深海` },
-    { step: 2, icon: "sensor", title: "提炼生产", desc: `${b.productionDate} · 低温提炼灌装` },
-    { step: 3, icon: "rule", title: "第三方检测", desc: `SGS 检测报告 · EPA+DHA ${b.epaDha}%` },
-    { step: 4, icon: "snowflake", title: "全程冷链", desc: `全程低温运输 · 温度异常 ${b.coldGap} 小时` },
-    { step: 5, icon: "chain", title: "跨境到货", desc: "海关清关 · 保税仓出库" },
-  ];
-}
-
-const METRIC_VIEWS = [
-  { key: "epa-dha", icon: "fish", label: "EPA+DHA", value: "78%", unit: "检测结果（占总脂肪酸）", bar: 78, status: "pass" },
-  { key: "peroxide", icon: "warning", label: "过氧化值", value: "2.1", unit: "meq/kg", bar: 42, status: "pass" },
-  { key: "cold-chain", icon: "snowflake", label: "冷链", value: "2小时", unit: "全程温度异常时长", bar: 33, status: "pass" },
-  { key: "heavy-metal", icon: "alert", label: "重金属报告", value: "—", unit: "未覆盖 · 可继续调用独立检测服务", bar: 12, status: "missing" },
-];
-
-function evidenceHash(seed: string): string {
-  return "0x" + createHash("sha256").update(seed).digest("hex").slice(0, 32);
-}
-
-function evidenceFor(batchId: string) {
-  const b = FISH_OIL_BATCHES[batchId] ?? FISH_OIL_BATCHES["FO-2026-001"];
-  const stamp = `${b.productionDate}T`;
-  return [
-    { step: 1, icon: "sensor", title: "设备采集", source: "船舱传感器 · 温度 / 湿度 / 定位", description: "船上与加工环节的传感器数据，记录捕捞、加工、温度等关键信息。", hash: evidenceHash(`${batchId}:sensor`), verifiedAt: `${stamp}08:30:00Z` },
-    { step: 2, icon: "agent", title: "Agent 关联", source: "TruthPass Agent · 多源数据关联", description: "TruthPass Agent 将多源数据关联，形成可验证的证据包。", hash: evidenceHash(`${batchId}:agent`), verifiedAt: `${stamp}12:00:00Z` },
-    { step: 3, icon: "jev", title: "JEV 判别", source: "JEV 决策门 · route_to_rule · 0.94", description: "用固定类型输出识别证据缺口、冲突和下一步路由。", hash: evidenceHash(`${batchId}:jev`), verifiedAt: `${stamp}13:40:00Z` },
-    { step: 4, icon: "rule", title: "规则验收", source: `规则引擎 ${policy.policyId}@${policy.version}`, description: "按食品安全与质量规则进行自动化验收，生成结论与置信范围。", hash: evidenceHash(`${batchId}:rule`), verifiedAt: `${stamp}14:00:00Z` },
-    { step: 5, icon: "chain", title: "链上锚定", source: "链上锚定 · 不可篡改", description: "关键证据哈希上链，确保记录不可篡改、可长期验证。", hash: evidenceHash(`${batchId}:chain`), verifiedAt: `${stamp}14:05:00Z` },
-  ];
-}
-
-const JOURNEY_STEPS = [
-  { step: 1, title: "捕捞与提炼", description: "渔船捕捞 → 原料提炼，生产哈希上链", hash: "0x1a2b3c4d5e6f708192a3b4c5d6e7f809" },
-  { step: 2, title: "第三方检测", description: "SGS 检测报告 + 4 步过程证据上链", hash: "0x2b3c4d5e6f708192a3b4c5d6e7f8091a" },
-  { step: 3, title: "跨境物流", description: "全程冷链运输，物流哈希上链", hash: "0x3c4d5e6f708192a3b4c5d6e7f8091a2b" },
-  { step: 4, title: "海关清关", description: "入境检验检疫，海关哈希上链", hash: "0x4d5e6f708192a3b4c5d6e7f8091a2b3c" },
-  { step: 5, title: "保税仓入库", description: "保税仓入库，入库哈希上链", hash: "0x5e6f708192a3b4c5d6e7f8091a2b3c4d" },
-  { step: 6, title: "出库销售", description: "出库销售，销售哈希上链", hash: "0x6f708192a3b4c5d6e7f8091a2b3c4d5e" },
-];
 
 // ---------- HTTP 工具 ----------
 function sendJson(res: ServerResponse, status: number, data: unknown): void {
@@ -260,9 +237,9 @@ async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> 
   return JSON.parse(raw);
 }
 
-// ---------- SSE（对话暂用结构化脚本，后续替换为 Agent 合同） ----------
+// ---------- SSE 对话脚本 ----------
 function buildVerifyScript(batchId: string): Array<{ cls: string; text: string }> {
-  const b = FISH_OIL_BATCHES[batchId] ?? FISH_OIL_BATCHES["FO-2026-001"];
+  const b = FISH_OIL_BATCHES[batchId] ?? FISH_OIL_BATCHES[BATCH_ID];
   const verdict = b.passed ? "按当前规则通过。" : "未通过：部分指标超出验收标准。";
   return [
     { cls: "cmd", text: `$ zhenyan check --batch ${batchId}` },
@@ -293,7 +270,7 @@ const chatScripts: Record<string, Array<{ cls: string; text: string }>> = {
   ],
   cold: [
     { cls: "cmd", text: "$ zhenyan coldchain --batch FO-2026-001" },
-    { cls: "conclusion", text: `冷链中断 ${executionEvidence.coldChainGapHours}h ≤ ${policy.thresholds.maxLogisticsGapHours}h。` },
+    { cls: "conclusion", text: `冷链中断 ${inspectionEvidence.payload.coldChainGapHours}h ≤ ${policy.thresholds.maxLogisticsGapHours}h。` },
   ],
   fallback: [
     { cls: "plain", text: "抱歉，我目前只能回答该批次已公开的产地、检测项、规则与冷链证据。" },
@@ -311,12 +288,11 @@ function detectIntent(text: string): string {
 
 function extractBatchId(text: string): string {
   const m = text.match(/([A-Z]{2,3}-\d{4}-\d{3})/i);
-  return m ? m[1].toUpperCase() : "FO-2026-001";
+  return m ? m[1].toUpperCase() : BATCH_ID;
 }
 
-function streamChat(res: ServerResponse, intent: string, script: Array<{ cls: string; text: string }>): void {
+function streamChat(res: ServerResponse, script: Array<{ cls: string; text: string }>): void {
   res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache", Connection: "keep-alive" });
-  res.write("data: " + JSON.stringify({ kind: "begin", intent }) + "\n\n");
   let i = 0;
   const next = () => {
     if (res.writableEnded || res.destroyed) return;
@@ -350,7 +326,9 @@ async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): P
     } else {
       script = chatScripts[intent] || chatScripts.fallback;
     }
-    streamChat(res, intent, script);
+    res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8" });
+    res.write("data: " + JSON.stringify({ kind: "begin", intent }) + "\n\n");
+    streamChat(res, script);
     return true;
   }
 
@@ -372,6 +350,7 @@ async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): P
         summary: b.passed ? "基于多源证据的综合判断" : "部分指标未达验收标准",
         scope: `${batchId} 批次及当前公开的规则 ${policy.version}`,
       },
+      productionProcess: productionProcessFor(batchId),
       keyMetrics: metricsFor(batchId),
     });
     return true;
@@ -382,6 +361,14 @@ async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): P
     const batchId = evidenceLinkMatch[1];
     if (!FISH_OIL_BATCHES[batchId]) return sendJson(res, 404, { error: "batch not found" });
     sendJson(res, 200, evidenceFor(batchId));
+    return true;
+  }
+
+  const productionMatch = p.match(/^\/api\/products\/([^/]+)\/production\/?$/);
+  if (productionMatch && req.method === "GET") {
+    const batchId = productionMatch[1];
+    if (!FISH_OIL_BATCHES[batchId]) return sendJson(res, 404, { error: "batch not found" });
+    sendJson(res, 200, productionProcessFor(batchId));
     return true;
   }
 
@@ -396,8 +383,9 @@ async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): P
 
   const metricMatch = p.match(/^\/api\/products\/([^/]+)\/metrics\/([^/]+)\/?$/);
   if (metricMatch && req.method === "GET") {
+    const batchId = metricMatch[1];
     const key = metricMatch[2];
-    const view = metricsFor(metricMatch[1]).find((m) => m.key === key);
+    const view = metricsFor(batchId).find((m) => m.key === key);
     if (!view) return sendJson(res, 404, { error: "metric not found" });
     const thresholds = policy.thresholds;
     sendJson(res, 200, {
@@ -435,11 +423,7 @@ async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): P
       status: allPassed ? "accepted" : "rejected",
       score: allPassed ? 100 : 89,
       evidenceHash: assessment.evidenceHash,
-      serviceExecution: {
-        status: allPassed ? "accepted" : "rejected",
-        score: allPassed ? 100 : 75,
-        evidenceHash: serviceExecution.evidenceHash,
-      },
+      serviceExecution: { status: allPassed ? "accepted" : "rejected", score: allPassed ? 100 : 75, evidenceHash: assessment.evidenceHash },
       rules: [
         { name: "任务匹配", desc: "证据 taskId 与任务一致", passed: true },
         { name: "批次匹配", desc: `报告批次与请求批次一致（${batchId}）`, passed: true },
@@ -487,7 +471,6 @@ async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): P
     const rating = Number(body.rating || 5);
     const categories = Array.isArray(body.categories) ? (body.categories as string[]) : [];
     const comment = typeof body.comment === "string" ? body.comment.trim() : "";
-    // demo：每次提交动态生成一条新的购买记录，规避“同一购买只能反馈一次”的防重复限制
     const freshPurchase = await consumers.recordPurchase({
       consumerId,
       batchId: BATCH_ID,
@@ -502,9 +485,9 @@ async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): P
     });
     try {
       await mailer.sendMail({
-        from: `"真验 Zhenyan" <${process.env.SMTP_USER}>`,
+        from: `"TruthPass" <${process.env.SMTP_USER}>`,
         to: process.env.FEEDBACK_EMAIL,
-        subject: `真验消费者质量反馈 · ${BATCH_ID}`,
+        subject: `TruthPass 消费者质量反馈 · ${BATCH_ID}`,
         text: [
           `批次号：${BATCH_ID}`,
           `商品：${fishOilProduct.name}`,
@@ -530,8 +513,9 @@ async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): P
 
 async function handleStatic(url: URL, res: ServerResponse): Promise<void> {
   const pathname = decodeURIComponent(url.pathname);
-  let filePath = pathname === "/" ? join(WEB, "index.html") : join(WEB, normalize(pathname));
-  if (!filePath.startsWith(WEB)) {
+  const filePath = resolve(pathname === "/" ? join(WEB, "index.html") : join(WEB, normalize(pathname)));
+  const rel = relative(WEB, filePath);
+  if (rel.startsWith("..") || isAbsolute(rel)) {
     res.writeHead(403);
     res.end("Forbidden");
     return;
@@ -554,7 +538,7 @@ async function handleStatic(url: URL, res: ServerResponse): Promise<void> {
 
 const server = createServer(async (req, res) => {
   try {
-    const url = new URL(req.url ?? "/", `http://${req.headers.host || "localhost"}`);
+    const url = new URL(req.url ?? "/", "http://localhost");
     if (url.pathname.startsWith("/api/")) {
       const handled = await handleApi(url, req, res);
       if (!handled) sendJson(res, 404, { error: "not found" });
@@ -567,5 +551,5 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`真验 API 对接层已启动: http://localhost:${PORT}`);
+  console.log(`TruthPass API 对接层已启动: http://localhost:${PORT}`);
 });

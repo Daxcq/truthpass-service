@@ -29,7 +29,7 @@ const evidence: ExecutionEvidence = {
 };
 
 test("accepts matching service delivery without judging product quality", async () => {
-  const result = await verifyServiceExecution(task, evidence);
+  const result = await verifyServiceExecution(task, evidence, "verified");
   assert.equal(result.status, "accepted");
   assert.equal(result.score, 100);
   assert.equal(result.reasons.length, 0);
@@ -38,8 +38,14 @@ test("accepts matching service delivery without judging product quality", async 
   assert.equal(product.policyVersion, "v1");
 });
 
+test("does not trust an evidence boolean without an authenticated signature result", async () => {
+  const result = await verifyServiceExecution(task, evidence);
+  assert.equal(result.status, "rejected");
+  assert.equal(result.checks.signatureValid, false);
+});
+
 test("rejects evidence for another batch", async () => {
-  const result = await verifyServiceExecution(task, { ...evidence, reportBatchId: "B-2" });
+  const result = await verifyServiceExecution(task, { ...evidence, reportBatchId: "B-2" }, "verified");
   assert.equal(result.status, "rejected");
   assert.match(result.reasons.join(" "), /批次/);
 });
@@ -48,6 +54,7 @@ test("fails closed when task disables a required service signature", async () =>
   const result = await verifyServiceExecution(
     { ...task, acceptance: { ...task.acceptance, requireSignature: false } },
     { ...evidence, signatureValid: false },
+    "invalid",
   );
 
   assert.equal(result.status, "rejected");
