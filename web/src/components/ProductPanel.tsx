@@ -60,6 +60,19 @@ function MetricDetailModal({ batchId, metricKey, label, value }: { batchId: stri
           </>
         )}
       </p>
+      {data?.heavyMetals && (
+        <>
+          <h4 style={{ margin: "18px 0 6px" }}>重金属检测项</h4>
+          {data.heavyMetals.map((m) => (
+            <div className="hm-row" key={m.name}>
+              <span className={m.passed ? "mark" : "mark fail"}>{m.passed ? "✓" : "✗"}</span>
+              <span className="hm-name">{m.name}</span>
+              <span className="hm-value">{m.value} mg/kg</span>
+              <span className="hm-limit">（≤ {m.limit} mg/kg）</span>
+            </div>
+          ))}
+        </>
+      )}
       <h4 style={{ margin: "18px 0 4px" }}>来源</h4>
       {isLoading && <p style={{ color: "var(--muted)" }}>加载中…</p>}
       {data && <MetricSources sources={data.sources} />}
@@ -76,6 +89,7 @@ function MetricCard({ metric, batchId }: { metric: KeyMetric; batchId: string })
   const warn = metric.key === "peroxide";
   const missing = metric.status === "missing";
   const failed = metric.status === "fail";
+  const wide = metric.key === "heavy-metal";
   const [barPct, setBarPct] = useState(0);
 
   useEffect(() => {
@@ -83,8 +97,13 @@ function MetricCard({ metric, batchId }: { metric: KeyMetric; batchId: string })
     return () => window.clearTimeout(t);
   }, [pct]);
 
+  let cardClass = "metric-card";
+  if (missing) cardClass += " missing";
+  if (failed) cardClass += " fail";
+  if (wide) cardClass += " wide";
+
   return (
-    <div className={missing ? "metric-card missing wide" : failed ? "metric-card fail" : "metric-card"}>
+    <div className={cardClass}>
       <button
         className="metric-q"
         title="查看来源"

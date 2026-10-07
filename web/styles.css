@@ -310,7 +310,7 @@ body {
   border-radius: 0 6px 6px 0;
   margin: 2px 0 8px;
 }
-.conclusion { margin: 7px 0 2px; color: var(--text); font-size: 13.5px; }
+.conclusion { margin: 7px 0 2px; color: var(--text); font-size: 13.5px; white-space: pre-wrap; }
 .conclusion.lead {
   margin: 2px 0 5px;
   color: var(--cyan-2);
@@ -338,24 +338,33 @@ body {
 }
 .chat-quick button:hover { background: rgba(93, 213, 213, 0.14); }
 
-.chat-input { display: flex; gap: 10px; padding: 12px 16px 16px; }
+.chat-input { display: flex; align-items: center; gap: 8px; padding: 10px 12px 14px; }
+.voice-btn {
+  flex: none; width: 34px; height: 34px; border-radius: 50%;
+  background: rgba(93, 213, 213, 0.08); border: 1px solid var(--line);
+  color: var(--cyan-2); font-size: 14px; cursor: pointer; line-height: 1;
+  transition: background .2s, border-color .2s;
+}
+.voice-btn:hover { background: rgba(93, 213, 213, 0.16); border-color: var(--cyan); }
+.voice-btn.listening { background: rgba(255, 138, 80, 0.18); border-color: var(--warn); color: var(--warn); }
+.voice-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .chat-input input {
-  flex: 1; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line);
-  border-radius: 999px; color: var(--text); padding: 11px 16px; font-size: 13px; outline: none;
+  flex: 1; min-width: 0; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line);
+  border-radius: 999px; color: var(--text); padding: 9px 14px; font-size: 13px; outline: none;
   transition: border-color .2s, box-shadow .2s;
 }
 .chat-input input::placeholder { color: #6d8593; }
 .chat-input input:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(93, 213, 213, 0.12); }
-.chat-input button {
-  width: 42px; height: 42px; flex: none; border-radius: 50%;
+.chat-input button[type="submit"] {
+  width: 34px; height: 34px; flex: none; border-radius: 50%;
   background: linear-gradient(135deg, var(--cyan-2), #35b5b5);
-  color: #06202a; border: none; cursor: pointer; font-size: 16px;
+  color: #06202a; border: none; cursor: pointer; font-size: 14px;
   display: grid; place-items: center;
   box-shadow: 0 0 16px rgba(93, 213, 213, 0.35);
   transition: transform .15s, box-shadow .2s;
 }
-.chat-input button:hover { transform: scale(1.06); }
-.chat-input button:disabled { opacity: .5; cursor: default; transform: none; }
+.chat-input button[type="submit"]:hover { transform: scale(1.06); }
+.chat-input button[type="submit"]:disabled { opacity: .5; cursor: default; transform: none; }
 
 /* ================= 中栏 · 产品卡 ================= */
 .product-panel { padding: 24px 26px; }
@@ -861,6 +870,11 @@ body {
 .rule-verdict.fail { color: var(--reject); }
 .source-item { padding: 11px 0; border-bottom: 1px solid var(--line-soft); font-size: 13.5px; line-height: 1.7; }
 .source-item b { color: var(--cyan-2); }
+.hm-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 13px; }
+.hm-row .mark { width: 16px; flex: none; }
+.hm-name { flex: none; min-width: 56px; color: var(--text); }
+.hm-value { color: var(--cyan-2); font-family: var(--font-num); }
+.hm-limit { color: var(--muted); font-size: 12px; }
 .journey-step { display: grid; grid-template-columns: 34px 1fr; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--line-soft); }
 .journey-num {
   width: 30px; height: 30px; border-radius: 50%;

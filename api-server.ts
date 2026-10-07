@@ -101,21 +101,38 @@ const policy = getPolicySnapshot(task.acceptance.policyId, task.acceptance.polic
 const assessment = await inspectionTools.assessProductBatch({ task, evidenceId: "ev-test-report-001" });
 
 // ---------- 多批次展示数据（demo 编造，001 走真实验收） ----------
-const FISH_OIL_BATCHES: Record<string, { name: string; image: string; epaDha: number; peroxide: number; totox: number; coldGap: number; productionDate: string; origin: string; passed: boolean }> = {
-  "FO-2026-001": { name: "深海鱼油软胶囊", image: "/assets/fish-oil-product.png", epaDha: 78, peroxide: 2.1, totox: 11, coldGap: 2, productionDate: "2026-01-12", origin: "北太平洋海域", passed: true },
-  "FO-2026-002": { name: "高纯度 Omega-3 鱼油", image: "/assets/fish-oil-002.png", epaDha: 82, peroxide: 1.8, totox: 9, coldGap: 1.5, productionDate: "2026-02-08", origin: "挪威海域", passed: true },
-  "FO-2026-003": { name: "儿童 DHA 鱼油滴剂", image: "/assets/fish-oil-003.png", epaDha: 90, peroxide: 1.2, totox: 6, coldGap: 3, productionDate: "2026-03-15", origin: "阿拉斯加海域", passed: true },
-  "FO-2026-004": { name: "三文鱼油胶囊", image: "/assets/fish-oil-004.png", epaDha: 75, peroxide: 6.8, totox: 14, coldGap: 2.5, productionDate: "2026-04-02", origin: "智利海域", passed: false },
-  "FO-2026-005": { name: "南极磷虾油", image: "/assets/fish-oil-005.png", epaDha: 85, peroxide: 1.5, totox: 8, coldGap: 7, productionDate: "2026-05-20", origin: "南极海域", passed: false },
+type HeavyMetals = { pb: number; hg: number; cd: number; as: number };
+
+const HEAVY_METAL_LIMITS: HeavyMetals = { pb: 0.5, hg: 0.1, cd: 0.1, as: 1.0 };
+const HEAVY_METAL_LABELS: Record<keyof HeavyMetals, string> = { pb: "铅 Pb", hg: "汞 Hg", cd: "镉 Cd", as: "砷 As" };
+
+const FISH_OIL_BATCHES: Record<string, { name: string; image: string; epaDha: number; peroxide: number; totox: number; coldGap: number; productionDate: string; origin: string; passed: boolean; heavyMetals: HeavyMetals }> = {
+  "FO-2026-001": { name: "深海鱼油软胶囊", image: "/assets/fish-oil-product.png", epaDha: 78, peroxide: 2.1, totox: 11, coldGap: 2, productionDate: "2026-01-12", origin: "北太平洋海域", passed: true, heavyMetals: { pb: 0.02, hg: 0.01, cd: 0.03, as: 0.1 } },
+  "FO-2026-002": { name: "高纯度 Omega-3 鱼油", image: "/assets/fish-oil-002.png", epaDha: 82, peroxide: 1.8, totox: 9, coldGap: 1.5, productionDate: "2026-02-08", origin: "挪威海域", passed: true, heavyMetals: { pb: 0.01, hg: 0.02, cd: 0.02, as: 0.15 } },
+  "FO-2026-003": { name: "儿童 DHA 鱼油滴剂", image: "/assets/fish-oil-003.png", epaDha: 90, peroxide: 1.2, totox: 6, coldGap: 3, productionDate: "2026-03-15", origin: "阿拉斯加海域", passed: true, heavyMetals: { pb: 0.03, hg: 0.01, cd: 0.01, as: 0.08 } },
+  "FO-2026-004": { name: "三文鱼油胶囊", image: "/assets/fish-oil-004.png", epaDha: 75, peroxide: 6.8, totox: 14, coldGap: 2.5, productionDate: "2026-04-02", origin: "智利海域", passed: false, heavyMetals: { pb: 0.04, hg: 0.03, cd: 0.05, as: 0.2 } },
+  "FO-2026-005": { name: "南极磷虾油", image: "/assets/fish-oil-005.png", epaDha: 85, peroxide: 1.5, totox: 8, coldGap: 7, productionDate: "2026-05-20", origin: "南极海域", passed: false, heavyMetals: { pb: 0.05, hg: 0.02, cd: 0.18, as: 0.3 } },
 };
+
+function heavyMetalStatus(metals: HeavyMetals): "pass" | "fail" {
+  const keys = Object.keys(HEAVY_METAL_LIMITS) as Array<keyof HeavyMetals>;
+  return keys.some((k) => metals[k] > HEAVY_METAL_LIMITS[k]) ? "fail" : "pass";
+}
+
+function heavyMetalValue(metals: HeavyMetals): string {
+  const keys = Object.keys(HEAVY_METAL_LIMITS) as Array<keyof HeavyMetals>;
+  const over = keys.filter((k) => metals[k] > HEAVY_METAL_LIMITS[k]).map((k) => HEAVY_METAL_LABELS[k]);
+  return over.length ? `${over.join("、")}超标` : "4 项均达标";
+}
 
 function metricsFor(batchId: string) {
   const b = FISH_OIL_BATCHES[batchId] ?? FISH_OIL_BATCHES[BATCH_ID];
+  const hm = heavyMetalStatus(b.heavyMetals);
   return [
     { key: "epa-dha", icon: "fish", label: "EPA+DHA", value: `${b.epaDha}%`, unit: "检测结果（占总脂肪酸）", bar: Math.min(100, b.epaDha), status: b.epaDha >= 70 ? "pass" : "fail" },
     { key: "peroxide", icon: "warning", label: "过氧化值", value: `${b.peroxide}`, unit: "meq/kg", bar: Math.min(100, Math.round((b.peroxide / 5) * 100)), status: b.peroxide <= 5 ? "pass" : "fail" },
     { key: "cold-chain", icon: "snowflake", label: "冷链", value: `${b.coldGap}小时`, unit: "全程温度异常时长", bar: Math.min(100, Math.round((b.coldGap / 6) * 100)), status: b.coldGap <= 6 ? "pass" : "fail" },
-    { key: "heavy-metal", icon: "alert", label: "重金属报告", value: "—", unit: "未覆盖 · 可继续调用独立检测服务", bar: 12, status: "missing" },
+    { key: "heavy-metal", icon: "alert", label: "重金属报告", value: heavyMetalValue(b.heavyMetals), unit: "铅 / 汞 / 镉 / 砷", bar: hm === "pass" ? 15 : 85, status: hm },
   ];
 }
 
@@ -289,8 +306,11 @@ function detectIntent(text: string): string {
 }
 
 function extractBatchId(text: string): string {
-  const m = text.match(/([A-Z]{2,3}-\d{4}-\d{3})/i);
-  return m ? m[1].toUpperCase() : BATCH_ID;
+  const full = text.match(/([A-Z]{2,3}-\d{4}-\d{3})/i);
+  if (full) return full[1].toUpperCase();
+  const short = text.match(/\b0*0?([1-5])\b/);
+  if (short && FISH_OIL_BATCHES[`FO-2026-00${short[1]}`]) return `FO-2026-00${short[1]}`;
+  return "";
 }
 
 function streamChat(res: ServerResponse, intent: string, script: Array<{ cls: string; text: string }>): void {
@@ -311,6 +331,89 @@ function streamChat(res: ServerResponse, intent: string, script: Array<{ cls: st
   next();
 }
 
+async function streamAgent(res: ServerResponse, batchId: string, question: string): Promise<boolean> {
+  const b = FISH_OIL_BATCHES[batchId];
+  const systemPrompt = b
+    ? [
+        "你是 TruthPass 的溯源验证助手。请基于下面提供的批次验证数据，用简洁、友好的中文回答消费者的问题。",
+        "只依据给定数据回答，不要编造检测值或效果承诺；数据里没有的就说明暂未覆盖。",
+        "回答请使用纯文本，不要使用 Markdown 格式（不要加星号、井号、反引号等标记符号），用自然的分行即可。",
+        "",
+        `批次号：${batchId}`,
+        `商品：${b.name}`,
+        `产地：${b.origin}`,
+        `生产日期：${b.productionDate}`,
+        `验收结论：${b.passed ? "通过验收" : "未通过验收"}`,
+        `EPA+DHA：${b.epaDha}%（门槛 ≥70%）`,
+        `过氧化值：${b.peroxide} meq/kg（门槛 ≤5）`,
+        `冷链中断：${b.coldGap} 小时（门槛 ≤6 小时）`,
+        `重金属：${heavyMetalValue(b.heavyMetals)}（铅/汞/镉/砷）`,
+        "以上均为 demo/synthetic 演示数据。",
+      ].join("\n")
+    : [
+        "你是 TruthPass 的溯源验证助手。用户还没有指定要查询的商品或批次。",
+        "请用简洁、友好的中文引导用户：告诉用户可以查询「鱼油」商品，并提供批次号（例如 FO-2026-001 到 FO-2026-005，也可以直接说 001 到 005）。",
+        "不要假设用户要查询某一个具体批次，也不要输出具体的检测数据。",
+        "回答请使用纯文本，不要使用 Markdown 格式，用自然的分行即可。",
+      ].join("\n");
+
+  const baseUrl = (process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com").replace(/\/+$/, "");
+  const model = process.env.DEEPSEEK_MODEL || "deepseek-chat";
+  const upstream = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: question },
+      ],
+      stream: true,
+    }),
+  });
+
+  if (!upstream.ok || !upstream.body) return false;
+
+  res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache", Connection: "keep-alive" });
+  res.write("data: " + JSON.stringify({ kind: "begin", intent: "agent" }) + "\n\n");
+
+  const reader = upstream.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        const t = line.trim();
+        if (!t.startsWith("data:")) continue;
+        const payload = t.slice(5).trim();
+        if (!payload || payload === "[DONE]") continue;
+        try {
+          const json = JSON.parse(payload);
+          const delta = json.choices?.[0]?.delta?.content;
+          if (delta) {
+            res.write("data: " + JSON.stringify({ kind: "line", cls: "conclusion", text: delta }) + "\n\n");
+          }
+        } catch {
+          // 忽略无法解析的行
+        }
+      }
+    }
+  } catch {
+    // 上游中断时直接结束
+  }
+  res.write("data: " + JSON.stringify({ kind: "done" }) + "\n\n");
+  res.end();
+  return true;
+}
+
 // ---------- 路由 ----------
 async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): Promise<boolean> {
   const p = url.pathname;
@@ -319,13 +422,15 @@ async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): P
     const body = await readBody(req);
     const messages = (body.messages as Array<{ content: string }>) || [];
     const last = messages[messages.length - 1]?.content || "";
-    const intent = detectIntent(last);
     const batchId = extractBatchId(last);
+    const agentOk = await streamAgent(res, batchId, last);
+    if (agentOk) return true;
+    const intent = detectIntent(last);
     let script: Array<{ cls: string; text: string }>;
     if (intent === "default") {
-      script = buildVerifyScript(batchId);
+      script = buildVerifyScript(batchId || BATCH_ID);
     } else if (intent === "unsupported") {
-      script = [{ cls: "plain", text: "当前 demo 仅支持鱼油，先按鱼油演示。" }, ...buildVerifyScript(batchId)];
+      script = [{ cls: "plain", text: "当前 demo 仅支持鱼油，先按鱼油演示。" }, ...buildVerifyScript(batchId || BATCH_ID)];
     } else {
       script = chatScripts[intent] || chatScripts.fallback;
     }
@@ -386,6 +491,8 @@ async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): P
   if (metricMatch && req.method === "GET") {
     const batchId = metricMatch[1];
     const key = metricMatch[2];
+    const b = FISH_OIL_BATCHES[batchId];
+    if (!b) return sendJson(res, 404, { error: "batch not found" });
     const view = metricsFor(batchId).find((m) => m.key === key);
     if (!view) return sendJson(res, 404, { error: "metric not found" });
     const thresholds = policy.thresholds;
@@ -397,7 +504,16 @@ async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): P
         key === "epa-dha" ? `≥ ${thresholds.minEpaDhaPercent}%`
         : key === "peroxide" ? `≤ ${thresholds.maxPeroxideValue}`
         : key === "cold-chain" ? `≤ ${thresholds.maxLogisticsGapHours} 小时`
-        : "未覆盖",
+        : "铅/汞/镉/砷 均需达标",
+      heavyMetals:
+        key === "heavy-metal"
+          ? (Object.keys(HEAVY_METAL_LIMITS) as Array<keyof HeavyMetals>).map((k) => ({
+              name: HEAVY_METAL_LABELS[k],
+              value: b.heavyMetals[k],
+              limit: HEAVY_METAL_LIMITS[k],
+              passed: b.heavyMetals[k] <= HEAVY_METAL_LIMITS[k],
+            }))
+          : undefined,
       sources: [
         {
           name: key === "cold-chain" ? "冷链温度传感器" : "SGS 检测报告",

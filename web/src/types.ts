@@ -74,12 +74,20 @@ export interface MetricSource {
   signature: string;
 }
 
+export interface HeavyMetalItem {
+  name: string;
+  value: number;
+  limit: number;
+  passed: boolean;
+}
+
 export interface MetricDetail {
   label: string;
   value: string;
   unit: string;
   threshold: string;
   sources: MetricSource[];
+  heavyMetals?: HeavyMetalItem[];
 }
 
 export type ChatLineClass =

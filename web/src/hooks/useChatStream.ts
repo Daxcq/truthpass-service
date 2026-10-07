@@ -42,7 +42,13 @@ export function useChatStream() {
             if (event.kind === "begin") {
               patch(agentId, (m) => ({ ...m, lines: [] }));
             } else if (event.kind === "line" && event.cls && event.text) {
-              patch(agentId, (m) => ({ ...m, lines: [...m.lines, { cls: event.cls!, text: event.text! }] }));
+              patch(agentId, (m) => {
+                const last = m.lines[m.lines.length - 1];
+                if (last && last.cls === event.cls) {
+                  return { ...m, lines: [...m.lines.slice(0, -1), { ...last, text: last.text + event.text }] };
+                }
+                return { ...m, lines: [...m.lines, { cls: event.cls!, text: event.text! }] };
+              });
             } else if (event.kind === "done") {
               patch(agentId, (m) => ({ ...m, done: true }));
             }

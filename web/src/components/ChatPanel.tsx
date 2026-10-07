@@ -10,6 +10,14 @@ const FISH_OIL_BATCHES = [
   { id: "FO-2026-005", name: "南极磷虾油" },
 ];
 
+function extractBatchId(text: string): string | null {
+  const full = text.match(/([A-Z]{2,3}-\d{4}-\d{3})/i);
+  if (full) return full[1].toUpperCase();
+  const short = text.match(/\b0*0?([1-5])\b/);
+  if (short) return `FO-2026-00${short[1]}`;
+  return null;
+}
+
 function LineView({ line }: { line: ChatLine }) {
   switch (line.cls) {
     case "lead":
@@ -57,7 +65,9 @@ export function ChatPanel({
   const { messages, ask } = useChatStream();
   const [input, setInput] = useState("");
   const [batchOpen, setBatchOpen] = useState(false);
+  const [listening, setListening] = useState(false);
   const chatLogRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<any>(null);
   const busy = messages.length > 0 && !messages[messages.length - 1].done;
 
   useEffect(() => {
@@ -65,17 +75,50 @@ export function ChatPanel({
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages]);
 
-  const runVerify = async (question: string) => {
+  const runVerify = async (question: string, batch?: string) => {
     if (!question.trim() || busy) return;
     setInput("");
-    onStart();
-    await ask(question);
-    onDone();
+    const bid = batch ?? extractBatchId(question);
+    if (bid) {
+      onBatch(bid);
+      onStart();
+      await ask(question);
+      onDone();
+    } else {
+      // 随意对话：只对话，不触发验证状态，中间框保持待检测
+      await ask(question);
+    }
   };
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
     runVerify(input);
+  };
+
+  const toggleVoice = () => {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) return;
+    if (listening) {
+      recognitionRef.current?.stop();
+      setListening(false);
+      return;
+    }
+    const recognition = new SR();
+    recognition.lang = "zh-CN";
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+    recognition.onresult = (event: any) => {
+      let text = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        text += event.results[i][0].transcript;
+      }
+      setInput(text);
+    };
+    recognition.onend = () => setListening(false);
+    recognition.onerror = () => setListening(false);
+    recognitionRef.current = recognition;
+    recognition.start();
+    setListening(true);
   };
 
   return (
@@ -91,9 +134,6 @@ export function ChatPanel({
             在线 · 基于真实数据的 AI 助手
           </small>
         </div>
-        <button className="chat-collapse" type="button" aria-label="收起">
-          ⌃
-        </button>
       </div>
 
       <div className="chat-log" ref={chatLogRef} aria-live="polite">
@@ -113,8 +153,7 @@ export function ChatPanel({
           <span className="chat-quick-label">商品：</span>
           <button
             onClick={() => {
-              onBatch("FO-2026-001");
-              runVerify("帮我溯源鱼油");
+              runVerify("帮我溯源鱼油", "FO-2026-001");
             }}
             disabled={busy}
           >
@@ -135,8 +174,7 @@ export function ChatPanel({
                     type="button"
                     onClick={() => {
                       setBatchOpen(false);
-                      onBatch(b.id);
-                      runVerify(`查询批次 ${b.id}`);
+                      runVerify(`查询批次 ${b.id}`, b.id);
                     }}
                   >
                     <b>{b.id}</b>
@@ -150,11 +188,20 @@ export function ChatPanel({
       </div>
 
       <form className="chat-input" onSubmit={submit}>
+        <button
+          type="button"
+          className={listening ? "voice-btn listening" : "voice-btn"}
+          onClick={toggleVoice}
+          aria-label={listening ? "停止语音输入" : "开始语音输入"}
+          disabled={busy}
+        >
+          {listening ? "⏺" : "🎤"}
+        </button>
         <input
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="输入商品名或批次号，例如：鱼油 / FO-2026-001"
+          placeholder={listening ? "正在聆听，请说话…" : "输入商品名或批次号，例如：鱼油 / FO-2026-001"}
           autoComplete="off"
           disabled={busy}
         />
