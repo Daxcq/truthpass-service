@@ -44,6 +44,36 @@ test("rejects duplicate IDs and preserves append-only records", async () => {
   assert.equal(repository.listEvidence(fishOilBatch.batchId).length, 1);
 });
 
+test("keeps repository records isolated from caller mutations", async () => {
+  const repository = new MemoryDataRepository();
+  const product = structuredClone(fishOilProduct);
+  const batch = structuredClone(fishOilBatch);
+  repository.createProduct(product);
+  repository.createBatch(batch);
+  const evidence = await repository.addEvidence(structuredClone(fishOilEvidence[0]!));
+
+  product.claims.push("caller mutation");
+  batch.fillingBatchId = "caller-mutation";
+  evidence.payload.tampered = true;
+
+  const storedProduct = repository.getProduct(product.productId)!;
+  const storedBatch = repository.getBatch(batch.batchId)!;
+  const storedEvidence = repository.getEvidence(evidence.evidenceId)!;
+  assert.equal(storedProduct.claims.includes("caller mutation"), false);
+  assert.notEqual(storedBatch.fillingBatchId, "caller-mutation");
+  assert.equal(storedEvidence.payload.tampered, undefined);
+
+  storedProduct.claims.push("read mutation");
+  storedBatch.fillingBatchId = "read-mutation";
+  storedEvidence.payload.tampered = true;
+  const listed = repository.listEvidence(batch.batchId);
+  listed[0]!.payload.tampered = true;
+
+  assert.equal(repository.getProduct(product.productId)!.claims.includes("read mutation"), false);
+  assert.notEqual(repository.getBatch(batch.batchId)!.fillingBatchId, "read-mutation");
+  assert.equal(repository.getEvidence(evidence.evidenceId)!.payload.tampered, undefined);
+});
+
 test("canonical JSON hashes equivalent object key order identically", () => {
   assert.equal(
     canonicalJson({ b: 2, a: { d: 4, c: 3 } }),

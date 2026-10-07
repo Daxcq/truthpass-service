@@ -11,16 +11,18 @@ export class MemoryDataRepository {
   createProduct(product: ProductRecord): ProductRecord {
     assertValid(validateProduct(product));
     if (this.products.has(product.productId)) throw new Error("productId 已存在");
-    this.products.set(product.productId, product);
-    return product;
+    const stored = structuredClone(product);
+    this.products.set(stored.productId, stored);
+    return structuredClone(stored);
   }
 
   createBatch(batch: BatchRecord): BatchRecord {
     assertValid(validateBatch(batch));
     if (!this.products.has(batch.productId)) throw new Error("batch 绑定的 product 不存在");
     if (this.batches.has(batch.batchId)) throw new Error("batchId 已存在");
-    this.batches.set(batch.batchId, batch);
-    return batch;
+    const stored = structuredClone(batch);
+    this.batches.set(stored.batchId, stored);
+    return structuredClone(stored);
   }
 
   async addEvidence(input: NewEvidenceRecord): Promise<EvidenceRecord> {
@@ -33,24 +35,30 @@ export class MemoryDataRepository {
       status: "submitted",
       createdAt: new Date().toISOString(),
     };
-    this.evidence.set(record.evidenceId, record);
-    return record;
+    const stored = structuredClone(record);
+    this.evidence.set(stored.evidenceId, stored);
+    return structuredClone(stored);
   }
 
   getProduct(productId: string): ProductRecord | undefined {
-    return this.products.get(productId);
+    const product = this.products.get(productId);
+    return product ? structuredClone(product) : undefined;
   }
 
   getBatch(batchId: string): BatchRecord | undefined {
-    return this.batches.get(batchId);
+    const batch = this.batches.get(batchId);
+    return batch ? structuredClone(batch) : undefined;
   }
 
   getEvidence(evidenceId: string): EvidenceRecord | undefined {
-    return this.evidence.get(evidenceId);
+    const evidence = this.evidence.get(evidenceId);
+    return evidence ? structuredClone(evidence) : undefined;
   }
 
   listEvidence(batchId: string): EvidenceRecord[] {
-    return [...this.evidence.values()].filter((record) => record.batchId === batchId);
+    return [...this.evidence.values()]
+      .filter((record) => record.batchId === batchId)
+      .map((record) => structuredClone(record));
   }
 }
 
