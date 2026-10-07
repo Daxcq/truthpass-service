@@ -11,6 +11,8 @@
   --cyan-2: #7ee8e8;
   --warn: #ff8a50;
   --ok: #10b981;
+  --reject: #f06d67;
+  --missing: #7a8694;
   --text: #eaf4f8;
   --muted: #9db2bf;
   --glow: rgba(93, 213, 213, 0.14);
@@ -892,7 +894,7 @@ body {
 .metric-card.wide { grid-column: 1 / -1; }
 .metric-value.missing { color: var(--muted); font-size: 28px; }
 .metric-card.missing .metric-bar-fill {
-  background: linear-gradient(90deg, #7a8694, #9db2bf);
+  background: linear-gradient(90deg, var(--missing), #9db2bf);
   box-shadow: none;
 }
 
@@ -927,7 +929,7 @@ body {
 .service-table > div:not(.table-head) { border-top: 1px solid var(--line-soft); }
 .green-text { color: var(--ok); }
 .amber-text { color: var(--warn); }
-.red-text { color: #f06d67; }
+.red-text { color: var(--reject); }
 .drawer-boundary { margin-top: 20px; padding: 13px 14px; border: 1px dashed rgba(255, 138, 80, 0.35); border-radius: 10px; font-size: 12.5px; color: var(--muted); line-height: 1.6; }
 .drawer-boundary span { display: block; color: var(--warn); font-weight: 700; margin-bottom: 4px; }
 
@@ -956,3 +958,15 @@ body {
 .join-btn.full span { display: block; }
 .join-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .consent-foot { color: var(--muted); font-size: 11px; margin: 8px 0 0; line-height: 1.5; text-align: center; }
+
+/* ============ 骨架屏 ============ */
+.skeleton {
+  border-radius: 10px;
+  background: linear-gradient(90deg, rgba(125, 200, 232, 0.07), rgba(125, 200, 232, 0.16), rgba(125, 200, 232, 0.07));
+  background-size: 220% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes skeleton-shimmer {
+  0% { background-position: 180% 0; }
+  100% { background-position: -180% 0; }
+}

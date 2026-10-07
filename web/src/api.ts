@@ -50,3 +50,31 @@ export async function postChat(
     }
   }
 }
+
+export interface ObserverServiceView {
+  id: string;
+  history: number;
+  live: "degraded" | "offline" | "online";
+  verdict: "rejected" | "not-called" | "passed";
+}
+
+export interface ObserverData {
+  task: string;
+  policy: string;
+  jev: string;
+  evidenceRoot: string;
+  chainStatus: string;
+  services: ObserverServiceView[];
+}
+
+export const fetchObserver = () => getJson<ObserverData>("/api/observer");
+
+export async function postFeedback(categories: string[]): Promise<{ ok: boolean; contributionPoints: number; evidenceHash: string }> {
+  const res = await fetch("/api/feedback", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ rating: 5, categories }),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as { ok: boolean; contributionPoints: number; evidenceHash: string };
+}

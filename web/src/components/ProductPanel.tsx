@@ -141,7 +141,25 @@ export function ProductPanel() {
   if (isLoading) {
     return (
       <section id="product" className="panel product-panel">
-        <p style={{ color: "var(--muted)" }}>正在加载批次证据…</p>
+        <div className="product-top">
+          <div className="skeleton" style={{ width: 260, height: 260, borderRadius: 16, flex: "none" }} />
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12 }}>
+            <div className="skeleton" style={{ width: "50%", height: 16 }} />
+            <div className="skeleton" style={{ width: "72%", height: 26 }} />
+            <div className="skeleton" style={{ width: "36%", height: 14 }} />
+            <div className="skeleton" style={{ width: "82%", height: 14 }} />
+            <div className="skeleton" style={{ width: "60%", height: 14 }} />
+          </div>
+        </div>
+        <div className="metrics" style={{ marginTop: 20 }}>
+          {[0, 1, 2].map((i) => (
+            <div className="metric-card" key={i}>
+              <div className="skeleton" style={{ width: 36, height: 36, borderRadius: 10 }} />
+              <div className="skeleton" style={{ width: "60%", height: 14, marginTop: 12 }} />
+              <div className="skeleton" style={{ width: "40%", height: 28, marginTop: 8 }} />
+            </div>
+          ))}
+        </div>
       </section>
     );
   }

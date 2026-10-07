@@ -1,18 +1,28 @@
 import { useState } from "react";
+import { postFeedback } from "../api";
 import { FEEDBACK_TAGS } from "../data";
 
 export function Community({ onToast }: { onToast: (msg: string) => void }) {
   const [consent, setConsent] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
+  const [submitting, setSubmitting] = useState(false);
 
   const toggleTag = (tag: string) =>
     setTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
 
-  const submit = () => {
-    if (!consent) return;
-    onToast(`已提交反馈${tags.length ? `（${tags.join("、")}）` : ""}，获得 14 点共建积分`);
-    setConsent(false);
-    setTags([]);
+  const submit = async () => {
+    if (!consent || submitting) return;
+    setSubmitting(true);
+    try {
+      const result = await postFeedback(tags);
+      onToast(`已提交反馈，获得 ${result.contributionPoints} 点共建积分 · 哈希 ${result.evidenceHash.slice(0, 10)}…`);
+      setConsent(false);
+      setTags([]);
+    } catch {
+      onToast("提交失败，请稍后重试");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -95,10 +105,10 @@ export function Community({ onToast }: { onToast: (msg: string) => void }) {
             <button
               className="join-btn full"
               type="button"
-              disabled={!consent}
+              disabled={!consent || submitting}
               onClick={submit}
             >
-              <span>提交反馈</span>
+              <span>{submitting ? "提交中…" : "提交反馈"}</span>
               <span>获得 14 点共建积分</span>
             </button>
             <p className="consent-foot">这是消费服务权益，不代表股权、债权或投资回报。</p>

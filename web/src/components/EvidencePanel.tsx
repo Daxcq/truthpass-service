@@ -52,7 +52,17 @@ export function EvidencePanel() {
       </div>
 
       {isLoading ? (
-        <p style={{ color: "var(--muted)" }}>正在加载证据链路…</p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div key={i} style={{ display: "flex", gap: 12 }}>
+              <div className="skeleton" style={{ width: 40, height: 40, borderRadius: 12, flex: "none" }} />
+              <div style={{ flex: 1 }}>
+                <div className="skeleton" style={{ width: "40%", height: 15 }} />
+                <div className="skeleton" style={{ width: "90%", height: 12, marginTop: 8 }} />
+              </div>
+            </div>
+          ))}
+        </div>
       ) : (
         <>
           <ol className="evidence-steps">

@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "verify": "npm test && npm run typecheck",
     "testbench:tools": "tsx src/tools/testbench-server.ts",
+    "api": "tsx api-server.ts",
     "dev": "vite",
     "build": "tsc -p tsconfig.web.json --noEmit && vite build",
     "preview": "vite preview",
