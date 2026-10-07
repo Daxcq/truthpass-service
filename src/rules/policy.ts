@@ -32,10 +32,14 @@ export const FISH_OIL_POLICY_V1: PolicySnapshot = {
   requiredEvidence: ["inspection", "cold_chain"],
 };
 
+Object.freeze(FISH_OIL_POLICY_V1.thresholds);
+Object.freeze(FISH_OIL_POLICY_V1.requiredEvidence);
+Object.freeze(FISH_OIL_POLICY_V1);
+
 const policies = new Map([[`${FISH_OIL_POLICY_V1.policyId}:${FISH_OIL_POLICY_V1.version}`, FISH_OIL_POLICY_V1]]);
 
 export function getPolicySnapshot(policyId: string, policyVersion: string): PolicySnapshot {
   const policy = policies.get(`${policyId}:${policyVersion}`);
   if (!policy) throw new Error(`未知或未批准的 policy: ${policyId}@${policyVersion}`);
-  return policy;
+  return structuredClone(policy);
 }

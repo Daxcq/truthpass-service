@@ -53,7 +53,7 @@ export class ServiceRegistry {
       const score = Math.round(
         candidate.card.historicalScore * 0.25 + liveScore * 0.2 + acceptanceScore * 0.55,
       );
-      const eligible = execution?.status === "accepted";
+      const eligible = execution?.status === "accepted" && product?.status === "accepted";
       ranked.push({ service: candidate.card, probe, execution, product, eligible, score });
     }
 

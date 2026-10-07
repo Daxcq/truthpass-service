@@ -24,7 +24,7 @@ function register(registry: ServiceRegistry, id: string, reportBatchId: string):
       return { serviceId: id, status: "healthy", latencyMs: 1, capabilityMatch: true, schemaValid: true, checkedAt: "2026-10-06T08:00:00Z" };
     },
     async execute(request) {
-      return { serviceId: id, taskId: request.taskId, batchId: request.batchId, reportBatchId, productionTime: request.productionTime, reportTime: "2026-10-06T09:00:00Z", logisticsGapHours: 1, signatureValid: true, payload: { evidenceMode: "demo/synthetic" } };
+      return { serviceId: id, taskId: request.taskId, batchId: request.batchId, reportBatchId, productionTime: request.productionTime, reportTime: "2026-10-06T09:00:00Z", logisticsGapHours: 1, signatureValid: true, epaDhaPercent: 78, peroxideValue: 2, totox: 10, coldChainGapHours: 1, payload: { evidenceMode: "demo/synthetic" } };
     },
   };
   registry.register(card, adapter);

@@ -12,7 +12,7 @@ const task: TaskRequest = {
   acceptance: { requireSignature: true, policyId: "fish-oil-quality", policyVersion: "v1" },
 };
 
-function adapter(card: ServiceCard, reportBatchId: string): ServiceAdapter {
+function adapter(card: ServiceCard, reportBatchId: string, productPasses = true): ServiceAdapter {
   return {
     async probe() {
       return {
@@ -34,6 +34,10 @@ function adapter(card: ServiceCard, reportBatchId: string): ServiceAdapter {
         reportTime: "2026-10-06T10:00:00Z",
         logisticsGapHours: 1,
         signatureValid: true,
+        epaDhaPercent: productPasses ? 78 : 60,
+        peroxideValue: 2,
+        totox: 10,
+        coldChainGapHours: 1,
         payload: { evidenceMode: "demo/synthetic" },
       };
     },
@@ -66,4 +70,16 @@ test("filters failed service execution before ranking", async () => {
   assert.equal(ranked[0]?.eligible, true);
   assert.equal(ranked[1]?.service.id, "historically-trusted");
   assert.equal(ranked[1]?.eligible, false);
+});
+
+test("does not mark a service eligible when product assessment fails", async () => {
+  const registry = new ServiceRegistry();
+  const service = card("bad-product", 99);
+  registry.register(service, adapter(service, "FO-1", false));
+
+  const [result] = await registry.evaluate(task);
+
+  assert.equal(result?.execution?.status, "accepted");
+  assert.equal(result?.product?.status, "rejected");
+  assert.equal(result?.eligible, false);
 });
