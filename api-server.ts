@@ -7,7 +7,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { extname, isAbsolute, join, normalize, relative, resolve } from "node:path";
+import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import nodemailer from "nodemailer";
 
@@ -19,7 +19,13 @@ import { ServiceRegistry } from "./src/registry.js";
 import { ConsumerParticipationRegistry } from "./src/consumer.js";
 import { TruthPassTools } from "./src/tools/truthpass-tools.js";
 import { TrustedIssuerKeyRegistry, type TrustedIssuerPublicKey } from "./src/security/evidence-signatures.js";
+import { resolveStaticFilePath } from "./src/static-path.js";
 import { createPostgresReplayGuard, persistenceEnabled } from "./src/data/persistence.js";
+import { loadExecutionEvidenceFromPostgres, loadRepositoryFromPostgres } from "./src/data/postgres-reader.js";
+import { answerConsumerQuestion } from "./src/agents/consumer-assistant.js";
+import { renderConsumerFacts, runAgentCollaboration } from "./src/agents/collaboration.js";
+import { createCompatibleAgentInvoker } from "./src/agents/compatible-invoker.js";
+import { buildJevContext, buildJevRoleView } from "./src/jev/context.js";
 import type { ServiceAdapter, ServiceCard, TaskRequest } from "./src/types.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
@@ -27,6 +33,7 @@ const WEB_DIST = join(__dirname, "web", "dist");
 const WEB = existsSync(WEB_DIST) ? WEB_DIST : join(__dirname, "web");
 const PORT = Number(process.env.PORT || 4173);
 const BATCH_ID = "FO-2026-001";
+const invokeAgent = createCompatibleAgentInvoker();
 
 // ---------- 加载 .env（SMTP 等本地配置，不提交仓库） ----------
 async function loadEnv(): Promise<void> {
@@ -51,36 +58,6 @@ const mailer = nodemailer.createTransport({
   auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
 });
 
-// ---------- 初始化数据仓库（fixtures） ----------
-const repository = new MemoryDataRepository();
-repository.createProduct(fishOilProduct);
-repository.createBatch(fishOilBatch);
-for (const item of fishOilEvidence) await repository.addEvidence(item);
-const productionSummary = await buildProductionPublicSummary(repository, BATCH_ID);
-
-// 补一条结构完整的 inspection 证据，供确定性验收使用（对齐 testbench 的做法）。
-await repository.addEvidence({
-  schemaVersion: "evidence.v1",
-  evidenceId: "ev-test-report-001",
-  batchId: BATCH_ID,
-  kind: "inspection",
-  issuerId: "lab-demo-001",
-  sourceKind: "third_party",
-  occurredAt: "2026-10-06T10:20:00Z",
-  dataMode: "demo/synthetic",
-  payload: {
-    taskId: "task-fish-oil-2026-001",
-    reportBatchId: BATCH_ID,
-    logisticsGapHours: 2,
-    signatureValid: true,
-    epaDhaPercent: 78,
-    peroxideValue: 2.1,
-    totox: 11,
-    coldChainGapHours: 2,
-  },
-});
-
-// ---------- 任务与验收 ----------
 const task: TaskRequest = {
   taskId: "task-fish-oil-2026-001",
   serviceKind: "lab",
@@ -89,8 +66,41 @@ const task: TaskRequest = {
   productionTime: "2026-10-06T08:00:00Z",
   acceptance: { requireSignature: true, policyId: "fish-oil-quality", policyVersion: "v1" },
 };
+const dataSource = process.env.TRUTHPASS_DATA_SOURCE ?? (persistenceEnabled() ? "postgres" : "fixtures");
 
-const inspectionEvidence = repository.getEvidence("ev-test-report-001")!;
+// ---------- 初始化只读数据仓库 ----------
+const repository = dataSource === "postgres" ? await loadRepositoryFromPostgres() : new MemoryDataRepository();
+if (dataSource !== "postgres") {
+  repository.createProduct(fishOilProduct);
+  repository.createBatch(fishOilBatch);
+  for (const item of fishOilEvidence) await repository.addEvidence(item);
+}
+
+if (dataSource === "postgres") {
+  const executionEvidence = await loadExecutionEvidenceFromPostgres(task.taskId, task.batchId);
+  for (const evidence of executionEvidence) {
+    const evidenceId = `execution-${evidence.serviceId}-${evidence.reportTime.replace(/[^0-9]/g, "")}`;
+    await repository.addEvidence({
+      schemaVersion: "evidence.v1", evidenceId, batchId: evidence.batchId, kind: "inspection",
+      issuerId: evidence.serviceId, sourceKind: "third_party", occurredAt: evidence.reportTime,
+      dataMode: evidence.payload.evidenceMode === "demo/synthetic" ? "demo/synthetic" : "external",
+      payload: evidence.payload,
+      attestation: evidence.attestation,
+    });
+  }
+} else {
+  await repository.addEvidence({
+    schemaVersion: "evidence.v1", evidenceId: "ev-test-report-001", batchId: BATCH_ID, kind: "inspection",
+    issuerId: "lab-demo-001", sourceKind: "third_party", occurredAt: "2026-10-06T10:20:00Z", dataMode: "demo/synthetic",
+    payload: { taskId: task.taskId, reportBatchId: BATCH_ID, logisticsGapHours: 2, signatureValid: true, epaDhaPercent: 78, peroxideValue: 2.1, totox: 11, coldChainGapHours: 2 },
+  });
+}
+
+const productionSummary = await buildProductionPublicSummary(repository, BATCH_ID);
+
+const inspectionEvidence = repository.listEvidence(BATCH_ID).find((item) => item.kind === "inspection" && item.payload.taskId === task.taskId)
+  ?? repository.listEvidence(BATCH_ID).find((item) => item.kind === "inspection");
+if (!inspectionEvidence) throw new Error(`批次 ${BATCH_ID} 没有可用检测证据`);
 const trustedIssuerKeys = new TrustedIssuerKeyRegistry(
   JSON.parse(process.env.TRUTHPASS_TRUSTED_ISSUER_KEYS ?? "[]") as TrustedIssuerPublicKey[],
 );
@@ -98,7 +108,7 @@ const replayGuard = persistenceEnabled() ? createPostgresReplayGuard() : undefin
 const inspectionTools = new TruthPassTools(repository, "inspection", trustedIssuerKeys.resolve, true, replayGuard);
 
 const policy = getPolicySnapshot(task.acceptance.policyId, task.acceptance.policyVersion);
-const assessment = await inspectionTools.assessProductBatch({ task, evidenceId: "ev-test-report-001" });
+const assessment = await inspectionTools.assessProductBatch({ task, evidenceId: inspectionEvidence.evidenceId });
 
 // ---------- 多批次展示数据（demo 编造，001 走真实验收） ----------
 type HeavyMetals = { pb: number; hg: number; cd: number; as: number };
@@ -234,14 +244,6 @@ for (const [card, mode] of services) registry.register(card, adapterFor(card, mo
 // ---------- 消费者共建 ----------
 const consumers = new ConsumerParticipationRegistry();
 const consumerId = "consumer-demo-001";
-for (const batchId of Object.keys(FISH_OIL_BATCHES)) {
-  await consumers.grantConsent({
-    consumerId,
-    batchId,
-    scopes: ["purchase", "packaging", "odor", "storage", "quality-feedback"],
-    grantedAt: "2026-10-06T12:00:00Z",
-  });
-}
 
 // ---------- HTTP 工具 ----------
 function sendJson(res: ServerResponse, status: number, data: unknown): void {
@@ -251,58 +253,12 @@ function sendJson(res: ServerResponse, status: number, data: unknown): void {
 
 async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> {
   let raw = "";
-  for await (const chunk of req) raw += chunk.toString();
+  for await (const chunk of req) {
+    raw += chunk.toString();
+    if (raw.length > 16_384) throw new Error("请求体过大");
+  }
   if (!raw) return {};
   return JSON.parse(raw);
-}
-
-// ---------- SSE 对话脚本 ----------
-function buildVerifyScript(batchId: string): Array<{ cls: string; text: string }> {
-  const b = FISH_OIL_BATCHES[batchId] ?? FISH_OIL_BATCHES[BATCH_ID];
-  const verdict = b.passed ? "按当前规则通过。" : "未通过：部分指标超出验收标准。";
-  return [
-    { cls: "cmd", text: `$ zhenyan check --batch ${batchId}` },
-    { cls: "check", text: "✓ 读取设备采集数据" },
-    { cls: "check", text: "✓ 关联检测报告" },
-    { cls: "check", text: "✓ 执行规则验收（9 项）" },
-    { cls: "check", text: "✓ 验证链上记录" },
-    { cls: "lead", text: `${b.name} ${batchId}` },
-    { cls: "conclusion", text: verdict },
-    { cls: "conclusion", text: `EPA+DHA ${b.epaDha}%（≥70%），过氧化值 ${b.peroxide} meq/kg（≤5），冷链中断 ${b.coldGap} 小时（≤6）。` },
-    { cls: "disclaimer", text: "ⓘ 这是基于现有证据综合判断，并不代表对未来或其他批次的保证。" },
-  ];
-}
-
-const chatScripts: Record<string, Array<{ cls: string; text: string }>> = {
-  origin: [
-    { cls: "cmd", text: "$ zhenyan origin --batch FO-2026-001" },
-    { cls: "conclusion", text: `原料来自${fishOilProduct.name}，生产日期 ${fishOilBatch.productionAt.slice(0, 10)}。` },
-    { cls: "disclaimer", text: "以上为厂商自报来源，演示数据 demo/synthetic。" },
-  ],
-  metrics: [
-    { cls: "cmd", text: "$ zhenyan metrics --batch FO-2026-001" },
-    { cls: "conclusion", text: `EPA+DHA ${assessment.checks.epaDhaWithinLimit ? "78%" : "不达标"}；过氧化值 ${assessment.checks.peroxideWithinLimit ? "2.1" : "超标"}；冷链 ${assessment.checks.coldChainWithinLimit ? "2h" : "超限"}。` },
-  ],
-  rules: [
-    { cls: "cmd", text: "$ zhenyan rules --v1.0" },
-    { cls: "conclusion", text: `当前 policy ${policy.policyId}@${policy.version}，验收得分 ${assessment.score}/100。` },
-  ],
-  cold: [
-    { cls: "cmd", text: "$ zhenyan coldchain --batch FO-2026-001" },
-    { cls: "conclusion", text: `冷链中断 ${inspectionEvidence.payload.coldChainGapHours}h ≤ ${policy.thresholds.maxLogisticsGapHours}h。` },
-  ],
-  fallback: [
-    { cls: "plain", text: "抱歉，我目前只能回答该批次已公开的产地、检测项、规则与冷链证据。" },
-  ],
-};
-
-function detectIntent(text: string): string {
-  if (/燕窝|茶叶|swallow|bird.?nest|tea/i.test(text)) return "unsupported";
-  if (/产地|来源|海域|在哪|哪里/.test(text)) return "origin";
-  if (/检测|指标|含量|过氧化|epa|dha|totox/i.test(text)) return "metrics";
-  if (/规则|怎么判定|为什么通过|标准/.test(text)) return "rules";
-  if (/冷链|温度|物流|运输/.test(text)) return "cold";
-  return "default";
 }
 
 function extractBatchId(text: string): string {
@@ -331,87 +287,82 @@ function streamChat(res: ServerResponse, intent: string, script: Array<{ cls: st
   next();
 }
 
-async function streamAgent(res: ServerResponse, batchId: string, question: string): Promise<boolean> {
-  const b = FISH_OIL_BATCHES[batchId];
-  const systemPrompt = b
-    ? [
-        "你是 TruthPass 的溯源验证助手。请基于下面提供的批次验证数据，用简洁、友好的中文回答消费者的问题。",
-        "只依据给定数据回答，不要编造检测值或效果承诺；数据里没有的就说明暂未覆盖。",
-        "回答请使用纯文本，不要使用 Markdown 格式（不要加星号、井号、反引号等标记符号），用自然的分行即可。",
-        "",
-        `批次号：${batchId}`,
-        `商品：${b.name}`,
-        `产地：${b.origin}`,
-        `生产日期：${b.productionDate}`,
-        `验收结论：${b.passed ? "通过验收" : "未通过验收"}`,
-        `EPA+DHA：${b.epaDha}%（门槛 ≥70%）`,
-        `过氧化值：${b.peroxide} meq/kg（门槛 ≤5）`,
-        `冷链中断：${b.coldGap} 小时（门槛 ≤6 小时）`,
-        `重金属：${heavyMetalValue(b.heavyMetals)}（铅/汞/镉/砷）`,
-        "以上均为 demo/synthetic 演示数据。",
-      ].join("\n")
-    : [
-        "你是 TruthPass 的溯源验证助手。用户还没有指定要查询的商品或批次。",
-        "请用简洁、友好的中文引导用户：告诉用户可以查询「鱼油」商品，并提供批次号（例如 FO-2026-001 到 FO-2026-005，也可以直接说 001 到 005）。",
-        "不要假设用户要查询某一个具体批次，也不要输出具体的检测数据。",
-        "回答请使用纯文本，不要使用 Markdown 格式，用自然的分行即可。",
-      ].join("\n");
-
-  const baseUrl = (process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com").replace(/\/+$/, "");
-  const model = process.env.DEEPSEEK_MODEL || "deepseek-chat";
-  const upstream = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: question },
-      ],
-      stream: true,
-    }),
-  });
-
-  if (!upstream.ok || !upstream.body) return false;
-
+async function streamChatWithReply(
+  res: ServerResponse,
+  intent: string,
+  script: Array<{ cls: string; text: string }>,
+  reply: Promise<Array<{ cls: string; text: string }>>,
+): Promise<void> {
   res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache", Connection: "keep-alive" });
-  res.write("data: " + JSON.stringify({ kind: "begin", intent: "agent" }) + "\n\n");
-
-  const reader = upstream.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  try {
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        const t = line.trim();
-        if (!t.startsWith("data:")) continue;
-        const payload = t.slice(5).trim();
-        if (!payload || payload === "[DONE]") continue;
-        try {
-          const json = JSON.parse(payload);
-          const delta = json.choices?.[0]?.delta?.content;
-          if (delta) {
-            res.write("data: " + JSON.stringify({ kind: "line", cls: "conclusion", text: delta }) + "\n\n");
-          }
-        } catch {
-          // 忽略无法解析的行
-        }
-      }
-    }
-  } catch {
-    // 上游中断时直接结束
+  const send = (event: unknown) => res.write("data: " + JSON.stringify(event) + "\n\n");
+  send({ kind: "begin", intent });
+  for (const line of script) send({ kind: "line", ...line });
+  for (const line of await reply) {
+    if (res.writableEnded || res.destroyed) return;
+    send({ kind: "line", ...line });
   }
-  res.write("data: " + JSON.stringify({ kind: "done" }) + "\n\n");
+  send({ kind: "done" });
   res.end();
-  return true;
+}
+
+async function consumerChat(batchId: string, question: string, res: ServerResponse): Promise<void> {
+  if (!batchId) {
+    const available = Object.keys(FISH_OIL_BATCHES).filter((id) => repository.getBatch(id));
+    const reply = available.length
+      ? "请提供鱼油批次号。我能读取已登记的批次：" + available.join("、") + "。"
+      : "请提供商品名和批次号，我会先检查系统是否登记了对应证据。";
+    streamChat(res, "consumer_query", [{ cls: "conclusion", text: reply }]);
+    return;
+  }
+
+  const batch = repository.getBatch(batchId);
+  if (!batch || !FISH_OIL_BATCHES[batchId]) {
+    streamChat(res, "consumer_query", [{ cls: "disclaimer", text: "系统没有找到批次 " + batchId + " 的已登记证据，不会用其他批次的数据代替。" }]);
+    return;
+  }
+
+  const context = buildJevContext(repository, batchId);
+  const evidence = repository.listEvidence(batchId).map((item) => ({
+    evidenceId: item.evidenceId,
+    kind: item.kind,
+    issuerId: item.issuerId,
+    sourceKind: item.sourceKind,
+    status: item.status,
+    dataMode: item.dataMode,
+    signature: item.attestation ? "not_checked" as const : "missing" as const,
+  }));
+  const decision = batchId === BATCH_ID
+    ? assessment.status === "accepted" ? "accepted" as const : assessment.status === "rejected" ? "rejected" as const : "not_assessed" as const
+    : "not_assessed" as const;
+  const card = answerConsumerQuestion(question, {
+    batchId,
+    dataMode: batch.dataMode,
+    decision,
+    decisionReasons: batchId === BATCH_ID ? assessment.reasons : [],
+    evidence,
+  });
+  const lines = [
+    { cls: "cmd", text: "$ zhenyan ask --batch " + batchId },
+    { cls: "lead", text: context.product.name + " · " + batchId },
+    { cls: "conclusion", text: card.headline },
+    ...card.uncertainties.map((text) => ({ cls: "disclaimer", text })),
+    ...card.nextActions.map((text) => ({ cls: "conclusion", text: "建议：" + text })),
+  ];
+
+  if (!process.env.AGENT_API_KEY || !process.env.AGENT_MODEL) {
+    streamChat(res, "consumer_evidence", [...lines, ...card.facts.map((text) => ({ cls: "plain", text })), { cls: "disclaimer", text: "StepFun 未配置；以上为根据登记证据和代码结果生成的说明。" }]);
+    return;
+  }
+
+  const productionInput = { schemaVersion: "agent.input.v1", role: "production", view: buildJevRoleView(context, "production") };
+  const inspectionInput = { schemaVersion: "agent.input.v1", role: "inspection", view: buildJevRoleView(context, "inspection"), policy };
+  const modelReply = runAgentCollaboration(productionInput, inspectionInput, question, card, invokeAgent)
+    .then((result) => renderConsumerFacts(card, result.consumer.selectedFactIds).map((text) => ({ cls: "plain", text })))
+    .catch((error: unknown) => {
+      console.error("[agent] consumer collaboration unavailable:", error instanceof Error ? error.message : "unknown error");
+      return [{ cls: "disclaimer", text: "StepFun 暂不可用；以上仍是根据登记证据和代码结果生成的证据卡说明。" }];
+    });
+  await streamChatWithReply(res, "consumer_evidence", [...lines, { cls: "plain", text: "消费者 Agent 正在从证据卡中选择与问题相关的登记事实；模型不能新增事实。" }], modelReply);
 }
 
 // ---------- 路由 ----------
@@ -420,21 +371,10 @@ async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): P
 
   if (p === "/api/agent/chat" && req.method === "POST") {
     const body = await readBody(req);
-    const messages = (body.messages as Array<{ content: string }>) || [];
-    const last = messages[messages.length - 1]?.content || "";
-    const batchId = extractBatchId(last);
-    const agentOk = await streamAgent(res, batchId, last);
-    if (agentOk) return true;
-    const intent = detectIntent(last);
-    let script: Array<{ cls: string; text: string }>;
-    if (intent === "default") {
-      script = buildVerifyScript(batchId || BATCH_ID);
-    } else if (intent === "unsupported") {
-      script = [{ cls: "plain", text: "当前 demo 仅支持鱼油，先按鱼油演示。" }, ...buildVerifyScript(batchId || BATCH_ID)];
-    } else {
-      script = chatScripts[intent] || chatScripts.fallback;
-    }
-    streamChat(res, intent, script);
+    const messages = Array.isArray(body.messages) ? body.messages as Array<{ content?: unknown }> : [];
+    const last = typeof messages[messages.length - 1]?.content === "string" ? messages[messages.length - 1].content as string : "";
+    const requestedBatch = typeof body.batchId === "string" ? body.batchId.trim().toUpperCase() : "";
+    await consumerChat(requestedBatch || extractBatchId(last), last, res);
     return true;
   }
 
@@ -442,7 +382,10 @@ async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): P
   if (productMatch && req.method === "GET") {
     const batchId = productMatch[1];
     const b = FISH_OIL_BATCHES[batchId];
-    if (!b) return sendJson(res, 404, { error: "batch not found" });
+    if (!b) {
+      sendJson(res, 404, { error: "batch not found" });
+      return true;
+    }
     sendJson(res, 200, {
       batchId,
       name: b.name,
@@ -465,7 +408,10 @@ async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): P
   const evidenceLinkMatch = p.match(/^\/api\/products\/([^/]+)\/evidence-link\/?$/);
   if (evidenceLinkMatch && req.method === "GET") {
     const batchId = evidenceLinkMatch[1];
-    if (!FISH_OIL_BATCHES[batchId]) return sendJson(res, 404, { error: "batch not found" });
+    if (!FISH_OIL_BATCHES[batchId]) {
+      sendJson(res, 404, { error: "batch not found" });
+      return true;
+    }
     sendJson(res, 200, evidenceFor(batchId));
     return true;
   }
@@ -473,7 +419,10 @@ async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): P
   const productionMatch = p.match(/^\/api\/products\/([^/]+)\/production\/?$/);
   if (productionMatch && req.method === "GET") {
     const batchId = productionMatch[1];
-    if (!FISH_OIL_BATCHES[batchId]) return sendJson(res, 404, { error: "batch not found" });
+    if (!FISH_OIL_BATCHES[batchId]) {
+      sendJson(res, 404, { error: "batch not found" });
+      return true;
+    }
     sendJson(res, 200, productionProcessFor(batchId));
     return true;
   }
@@ -482,7 +431,10 @@ async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): P
   if (journeyMatch && req.method === "GET") {
     const batchId = journeyMatch[1];
     const b = FISH_OIL_BATCHES[batchId];
-    if (!b) return sendJson(res, 404, { error: "batch not found" });
+    if (!b) {
+      sendJson(res, 404, { error: "batch not found" });
+      return true;
+    }
     sendJson(res, 200, { batchId, status: b.passed ? "verified" : "review", steps: journeyFor(batchId) });
     return true;
   }
@@ -492,9 +444,15 @@ async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): P
     const batchId = metricMatch[1];
     const key = metricMatch[2];
     const b = FISH_OIL_BATCHES[batchId];
-    if (!b) return sendJson(res, 404, { error: "batch not found" });
+    if (!b) {
+      sendJson(res, 404, { error: "batch not found" });
+      return true;
+    }
     const view = metricsFor(batchId).find((m) => m.key === key);
-    if (!view) return sendJson(res, 404, { error: "metric not found" });
+    if (!view) {
+      sendJson(res, 404, { error: "metric not found" });
+      return true;
+    }
     const thresholds = policy.thresholds;
     sendJson(res, 200, {
       label: view.label,
@@ -520,7 +478,7 @@ async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): P
           method: key === "cold-chain" ? "每 5 分钟采样" : "第三方检测",
           reportNo: key === "cold-chain" ? "IOT-FO-2026-001" : "SGS-2026-1015-042",
           pdf: "ipfs://QmDemo.../report.pdf",
-          time: inspectionEvidence.occurredAt,
+          time: inspectionEvidence!.occurredAt,
           signature: "0x...demo-signature",
         },
       ],
@@ -589,22 +547,49 @@ async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): P
 
   if (p === "/api/feedback" && req.method === "POST") {
     const body = await readBody(req);
-    const batchId = typeof body.batchId === "string" ? body.batchId : BATCH_ID;
-    const b = FISH_OIL_BATCHES[batchId] ?? FISH_OIL_BATCHES[BATCH_ID];
-    const rating = Number(body.rating || 5);
-    const categories = Array.isArray(body.categories) ? (body.categories as string[]) : [];
+    const batchId = typeof body.batchId === "string" ? body.batchId : "";
+    const b = FISH_OIL_BATCHES[batchId];
+    const rating = body.rating;
+    const allowedCategories = ["包装完好", "无明显腥味", "批次可查", "口感不错", "日期新鲜", "物流快速", "保存方便"];
+    const categories = Array.isArray(body.categories) ? body.categories.filter((value): value is string => typeof value === "string") : [];
     const comment = typeof body.comment === "string" ? body.comment.trim() : "";
+    if (body.consent !== true || body.purchaseConfirmed !== true) {
+      sendJson(res, 400, { error: "提交反馈需要明确授权并确认已购买该批次" });
+      return true;
+    }
+    if (!b || !repository.getBatch(batchId)) {
+      sendJson(res, 404, { error: "批次不存在或没有登记记录" });
+      return true;
+    }
+    if (typeof rating !== "number" || !Number.isInteger(rating) || rating < 1 || rating > 5) {
+      sendJson(res, 400, { error: "评分必须是 1 到 5 的整数" });
+      return true;
+    }
+    if (!categories.length || categories.length > allowedCategories.length || categories.some((category) => !allowedCategories.includes(category)) || new Set(categories).size !== categories.length) {
+      sendJson(res, 400, { error: "反馈标签无效" });
+      return true;
+    }
+    if (comment.length > 1000) {
+      sendJson(res, 400, { error: "补充反馈最多 1000 字符" });
+      return true;
+    }
+    await consumers.grantConsent({
+      consumerId,
+      batchId,
+      scopes: ["purchase", "packaging", "odor", "storage", "quality-feedback"],
+      grantedAt: new Date().toISOString(),
+    });
     const freshPurchase = await consumers.recordPurchase({
       consumerId,
       batchId,
-      purchaseProofHash: `demo-purchase-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      purchaseProofHash: createHash("sha256").update("purchase-assertion:" + batchId + ":" + Date.now() + ":" + Math.random()).digest("hex"),
       createdAt: new Date().toISOString(),
     });
     const feedback = await consumers.recordFeedback({
       purchaseId: freshPurchase.purchaseId,
-      rating: Math.min(5, Math.max(1, rating)),
+      rating,
       categories,
-      evidence: { source: "demo/synthetic", note: "消费者 Agent 授权后的体验反馈" },
+      evidence: { source: "demo/synthetic", purchaseConfirmedByConsumer: true, comment },
     });
     try {
       await mailer.sendMail({
@@ -620,14 +605,14 @@ async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): P
           `EPA+DHA：${b.epaDha}%（≥70%）`,
           `过氧化值：${b.peroxide} meq/kg（≤5）`,
           `冷链中断：${b.coldGap} 小时（≤6）`,
-          `评分：${Math.min(5, Math.max(1, rating))}`,
+          `评分：${rating}`,
           `反馈标签：${categories.length ? categories.join("、") : "无"}`,
           `补充反馈：${comment || "无"}`,
           `共建积分：${feedback.contributionPoints}`,
           `证据哈希：${feedback.evidenceHash}`,
           `反馈编号：${feedback.feedbackId}`,
           "",
-          "由消费者 Agent 授权后自动提交。",
+          "用户已勾选授权并确认购买；该购买声明未作外部核验。",
         ].join("\n"),
       });
     } catch (error) {
@@ -642,9 +627,8 @@ async function handleApi(url: URL, req: IncomingMessage, res: ServerResponse): P
 
 async function handleStatic(url: URL, res: ServerResponse): Promise<void> {
   const pathname = decodeURIComponent(url.pathname);
-  const filePath = resolve(pathname === "/" ? join(WEB, "index.html") : join(WEB, normalize(pathname)));
-  const rel = relative(WEB, filePath);
-  if (rel.startsWith("..") || isAbsolute(rel)) {
+  const filePath = resolveStaticFilePath(WEB, pathname);
+  if (!filePath) {
     res.writeHead(403);
     res.end("Forbidden");
     return;

@@ -45,6 +45,16 @@ test("rejects duplicate IDs and preserves append-only records", async () => {
   assert.equal(repository.listEvidence(fishOilBatch.batchId).length, 1);
 });
 
+test("imports revoked database evidence as revoked instead of restoring it as active", async () => {
+  const repository = new MemoryDataRepository();
+  repository.createProduct(fishOilProduct);
+  repository.createBatch(fishOilBatch);
+  const imported = await repository.importEvidence(fishOilEvidence[1]!, "revoked");
+
+  assert.equal(imported.status, "revoked");
+  assert.equal(repository.getEvidence(imported.evidenceId)?.status, "revoked");
+});
+
 test("keeps repository records isolated from caller mutations", async () => {
   const repository = new MemoryDataRepository();
   const product = structuredClone(fishOilProduct);

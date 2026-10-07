@@ -3,7 +3,7 @@ import { generateKeyPairSync, sign } from "node:crypto";
 import test from "node:test";
 import { fishOilBatch, fishOilEvidence, fishOilProduct } from "../src/data/fixtures.js";
 import { MemoryDataRepository } from "../src/data/repository.js";
-import { TruthPassTools, ToolBoundaryError } from "../src/tools/truthpass-tools.js";
+import { getAgentToolAllowlist, TruthPassTools, ToolBoundaryError } from "../src/tools/truthpass-tools.js";
 import type { JevRole } from "../src/jev/model.js";
 import type { ExecutionEvidence, TaskRequest } from "../src/types.js";
 import { evidenceSigningPayload, InMemoryReplayGuard, TrustedIssuerKeyRegistry } from "../src/security/evidence-signatures.js";
@@ -194,6 +194,17 @@ test("tools reject external evidence without a trusted cryptographic signature",
   await assert.rejects(
     () => tools.assessProductBatch({ task, evidenceId: "ev-external-unverified" }),
     (error) => error instanceof ToolBoundaryError && error.code === "EVIDENCE_SIGNATURE_INVALID",
+  );
+});
+
+test("agent tool allowlists are role-scoped and cannot be widened by callers", async () => {
+  const productionTools = await setup("production");
+  const allowlist = getAgentToolAllowlist("production") as string[];
+  allowlist.push("assessProductBatch");
+  assert.ok(!getAgentToolAllowlist("production").includes("assessProductBatch" as never));
+  assert.throws(
+    () => productionTools.getPolicy({ policyId: "fish-oil-quality", policyVersion: "v1" }),
+    (error) => error instanceof ToolBoundaryError && error.code === "TOOL_FORBIDDEN",
   );
 });
 

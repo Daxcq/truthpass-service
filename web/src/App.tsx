@@ -36,6 +36,7 @@ export default function App() {
           onStart={() => setVerifyState("running")}
           onDone={() => setVerifyState("done")}
           onBatch={(id) => setBatchId(id)}
+          batchId={batchId}
         />
         <ProductPanel state={verifyState} batchId={batchId ?? ""} />
         <EvidencePanel state={verifyState} batchId={batchId ?? ""} />

@@ -24,13 +24,14 @@ export const fetchJevDetection = () => getJson<JevDetection>("/api/jev/detection
 
 export async function postChat(
   question: string,
+  batchId: string | null,
   onEvent: (event: ChatEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
   const res = await fetch("/api/agent/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ batchId: BATCH_ID, messages: [{ role: "user", content: question }] }),
+    body: JSON.stringify({ batchId, messages: [{ role: "user", content: question }] }),
     signal,
   });
   if (!res.ok || !res.body) throw new Error("stream unavailable");
@@ -75,12 +76,14 @@ export async function postFeedback(
   batchId: string,
   rating: number,
   categories: string[],
+  consent: boolean,
+  purchaseConfirmed: boolean,
   comment?: string,
 ): Promise<{ ok: boolean; contributionPoints: number; evidenceHash: string }> {
   const res = await fetch("/api/feedback", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ batchId, rating, categories, comment }),
+    body: JSON.stringify({ batchId, rating, categories, consent, purchaseConfirmed, comment }),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return (await res.json()) as { ok: boolean; contributionPoints: number; evidenceHash: string };

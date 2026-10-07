@@ -33,7 +33,7 @@ export const ICON_URLS: Record<string, string> = {
 // （已在文件上方定义 METRIC_BAR_PCT，此处仅补充重金属缺口）
 METRIC_BAR_PCT["heavy-metal"] = 12;
 
-export const FEEDBACK_TAGS = ["包装完好", "无明显腥味", "批次可查", "口感不错", "日期新鲜", "物流快速"];
+export const FEEDBACK_TAGS = ["包装完好", "无明显腥味", "批次可查", "口感不错", "日期新鲜", "物流快速", "保存方便"];
 
 export interface ObserverService {
   id: string;

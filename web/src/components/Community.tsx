@@ -4,6 +4,7 @@ import { FEEDBACK_TAGS } from "../data";
 
 export function Community({ onToast, batchId }: { onToast: (msg: string) => void; batchId: string | null }) {
   const [consent, setConsent] = useState(false);
+  const [purchaseConfirmed, setPurchaseConfirmed] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
@@ -13,12 +14,13 @@ export function Community({ onToast, batchId }: { onToast: (msg: string) => void
     setTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
 
   const submit = async () => {
-    if (!batchId || !consent || submitting) return;
+    if (!batchId || !consent || !purchaseConfirmed || submitting) return;
     setSubmitting(true);
     try {
-      const result = await postFeedback(batchId, rating || 5, tags, comment.trim() || undefined);
+      const result = await postFeedback(batchId, rating, tags, consent, purchaseConfirmed, comment.trim() || undefined);
       onToast(`已提交反馈，获得 ${result.contributionPoints} 点共建积分 · 哈希 ${result.evidenceHash.slice(0, 10)}…`);
       setConsent(false);
+      setPurchaseConfirmed(false);
       setTags([]);
       setRating(0);
       setComment("");
@@ -80,19 +82,27 @@ export function Community({ onToast, batchId }: { onToast: (msg: string) => void
               </span>
               <div className="consent-text">
                 <strong>{batchId ? `授权 ${batchId} 的质量反馈` : "暂无可反馈批次"}</strong>
-                <small>{batchId ? "你可以随时撤销，不上传健康数据" : "请先在左侧完成一次批次验证"}</small>
+                <small>{batchId ? "提交前需授权反馈用途，并确认已购买该批次；购买声明未作外部核验" : "请先在左侧完成一次批次验证"}</small>
               </div>
               <label className="switch">
                 <input
                   type="checkbox"
                   checked={consent}
                   disabled={!batchId}
-                  onChange={(e) => setConsent(e.target.checked)}
+                  onChange={(e) => {
+                    setConsent(e.target.checked);
+                    if (!e.target.checked) setPurchaseConfirmed(false);
+                  }}
                   aria-label="授权质量反馈"
                 />
                 <span />
               </label>
             </div>
+
+            <label className="purchase-confirmation">
+              <input type="checkbox" checked={purchaseConfirmed} disabled={!batchId || !consent} onChange={(e) => setPurchaseConfirmed(e.target.checked)} />
+              <span>我确认已购买此批次（演示登记，不代表购买凭证已独立核验）</span>
+            </label>
 
             <div className="tag-list">
               {FEEDBACK_TAGS.map((tag) => (
@@ -138,7 +148,7 @@ export function Community({ onToast, batchId }: { onToast: (msg: string) => void
             <button
               className="join-btn full"
               type="button"
-              disabled={!batchId || !consent || submitting || rating === 0 || tags.length === 0}
+              disabled={!batchId || !consent || !purchaseConfirmed || submitting || rating === 0 || tags.length === 0}
               onClick={submit}
             >
               <span>{submitting ? "提交中…" : "提交反馈"}</span>

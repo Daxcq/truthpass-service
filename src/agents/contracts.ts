@@ -2,45 +2,58 @@ import type { EvidenceKind } from "../data/model.js";
 import { canonicalJson } from "../data/canonical.js";
 import type { JevRoleView } from "../jev/model.js";
 import { getPolicySnapshot, type PolicySnapshot } from "../rules/policy.js";
+import type { ConsumerAnswer } from "./consumer-assistant.js";
 
-export type AgentRole = "production" | "inspection" | "consumer_feedback";
-export type PurchaseBinding = "registered_only" | "unverified";
+export type AgentRole = "production" | "inspection" | "consumer";
 
-export interface ConsumerFeedbackInput {
-  feedbackId: string;
-  batchId: string;
-  rating: number;
-  categories: string[];
-  evidenceHash: string;
-  purchaseBinding: PurchaseBinding;
-}
-
-interface AgentInputBase { schemaVersion: "agent.input.v1"; role: AgentRole; view: JevRoleView; }
-export interface ProductionAgentInput extends AgentInputBase { role: "production"; }
-export interface InspectionAgentInput extends AgentInputBase { role: "inspection"; policy: PolicySnapshot; }
-export interface ConsumerFeedbackAgentInput extends AgentInputBase { role: "consumer_feedback"; feedbacks: ConsumerFeedbackInput[]; }
-export type AgentInput = ProductionAgentInput | InspectionAgentInput | ConsumerFeedbackAgentInput;
-
+interface EvidenceAgentInput { schemaVersion: "agent.input.v1"; role: "production" | "inspection"; view: JevRoleView; }
+export interface ProductionAgentInput extends EvidenceAgentInput { role: "production"; }
+export interface InspectionAgentInput extends EvidenceAgentInput { role: "inspection"; policy: PolicySnapshot; }
 export interface AgentFinding { code: string; summary: string; sourceIds: string[]; }
+
 interface AgentOutputBase { schemaVersion: "agent.output.v1"; batchId: string; }
 export interface ProductionAgentOutput extends AgentOutputBase { role: "production"; findings: AgentFinding[]; }
 export interface InspectionAgentOutput extends AgentOutputBase { role: "inspection"; findings: AgentFinding[]; }
-export interface ConsumerFeedbackAgentOutput extends AgentOutputBase { role: "consumer_feedback"; themes: AgentFinding[]; anomalies: AgentFinding[]; }
-export type AgentOutput = ProductionAgentOutput | InspectionAgentOutput | ConsumerFeedbackAgentOutput;
-
-const roleEvidenceKinds: Record<AgentRole, EvidenceKind[]> = {
-  production: ["production"],
-  inspection: ["inspection", "cold_chain", "shipment"],
-  consumer_feedback: ["production", "inspection", "cold_chain", "shipment", "purchase", "consumer_feedback"],
-};
+export interface ConsumerAgentInput {
+  schemaVersion: "agent.input.v1";
+  role: "consumer";
+  batchId: string;
+  question: string;
+  evidenceCard: ConsumerAnswer;
+  analyses: { production: ProductionAgentOutput; inspection: InspectionAgentOutput };
+}
+export interface ConsumerAgentOutput extends AgentOutputBase { role: "consumer"; selectedFactIds: string[]; }
+export type AgentInput = ProductionAgentInput | InspectionAgentInput | ConsumerAgentInput;
+export type AgentOutput = ProductionAgentOutput | InspectionAgentOutput | ConsumerAgentOutput;
 
 export class AgentContractError extends Error {
   constructor(readonly path: string, message: string) { super(path + ": " + message); }
 }
 
+export function parseAgentInput(role: "production", value: unknown): ProductionAgentInput;
+export function parseAgentInput(role: "inspection", value: unknown): InspectionAgentInput;
+export function parseAgentInput(role: "consumer", value: unknown): ConsumerAgentInput;
+export function parseAgentInput(role: AgentRole, value: unknown): AgentInput;
 export function parseAgentInput(role: AgentRole, value: unknown): AgentInput {
   const input = objectAt(value, "input");
-  const keys = role === "production" ? ["schemaVersion", "role", "view"] : role === "inspection" ? ["schemaVersion", "role", "view", "policy"] : ["schemaVersion", "role", "view", "feedbacks"];
+  if (role === "consumer") {
+    exactKeys(input, ["schemaVersion", "role", "batchId", "question", "evidenceCard", "analyses"], "input");
+    literal(input.schemaVersion, "agent.input.v1", "input.schemaVersion");
+    literal(input.role, role, "input.role");
+    const batchId = stringAt(input.batchId, "input.batchId");
+    const question = stringAt(input.question, "input.question");
+    const evidenceCard = parseConsumerCard(input.evidenceCard, batchId);
+    const analyses = objectAt(input.analyses, "input.analyses");
+    exactKeys(analyses, ["production", "inspection"], "input.analyses");
+    return {
+      schemaVersion: "agent.input.v1", role, batchId, question, evidenceCard, analyses: {
+        production: parseUpstreamOutput("production", analyses.production, batchId),
+        inspection: parseUpstreamOutput("inspection", analyses.inspection, batchId),
+      },
+    };
+  }
+
+  const keys = role === "production" ? ["schemaVersion", "role", "view"] : ["schemaVersion", "role", "view", "policy"];
   exactKeys(input, keys, "input");
   literal(input.schemaVersion, "agent.input.v1", "input.schemaVersion");
   literal(input.role, role, "input.role");
@@ -48,7 +61,7 @@ export function parseAgentInput(role: AgentRole, value: unknown): AgentInput {
   const view = objectAt(input.view, "input.view");
   literal(view.schemaVersion, "jev.view.v1", "input.view.schemaVersion");
   literal(view.role, role, "input.view.role");
-  const expectedKinds = roleEvidenceKinds[role];
+  const expectedKinds: EvidenceKind[] = role === "production" ? ["production"] : ["inspection", "cold_chain", "shipment"];
   const viewKinds = stringArray(view.allowedEvidenceKinds, "input.view.allowedEvidenceKinds");
   if (!sameSet(viewKinds, expectedKinds)) fail("input.view.allowedEvidenceKinds", "与角色允许的证据类型不一致");
 
@@ -66,48 +79,81 @@ export function parseAgentInput(role: AgentRole, value: unknown): AgentInput {
   }
 
   if (role === "production") return { schemaVersion: "agent.input.v1", role, view: input.view as JevRoleView };
-  if (role === "inspection") {
-    const policy = objectAt(input.policy, "input.policy") as unknown as PolicySnapshot;
-    let approved: PolicySnapshot;
-    try { approved = getPolicySnapshot(policy.policyId, policy.version); }
-    catch { return fail("input.policy", "不是已批准的 PolicySnapshot"); }
-    if (canonicalJson(policy) !== canonicalJson(approved)) fail("input.policy", "内容与已批准快照不一致");
-    return { schemaVersion: "agent.input.v1", role, view: input.view as JevRoleView, policy: approved };
-  }
-
-  if (!Array.isArray(input.feedbacks)) fail("input.feedbacks", "必须是数组");
-  const feedbacks = input.feedbacks.map((raw, index): ConsumerFeedbackInput => {
-    const path = "input.feedbacks[" + index + "]";
-    const feedback = objectAt(raw, path);
-    exactKeys(feedback, ["feedbackId", "batchId", "rating", "categories", "evidenceHash", "purchaseBinding"], path);
-    const feedbackBatchId = stringAt(feedback.batchId, path + ".batchId");
-    if (feedbackBatchId !== batchId) fail(path + ".batchId", "反馈与当前批次不匹配");
-    if (typeof feedback.rating !== "number" || !Number.isFinite(feedback.rating) || feedback.rating < 1 || feedback.rating > 5) fail(path + ".rating", "必须是 1 到 5 的有限数字");
-    if (feedback.purchaseBinding !== "registered_only" && feedback.purchaseBinding !== "unverified") fail(path + ".purchaseBinding", "只能是 registered_only 或 unverified");
-    return { feedbackId: stringAt(feedback.feedbackId, path + ".feedbackId"), batchId: feedbackBatchId, rating: feedback.rating, categories: stringArray(feedback.categories, path + ".categories"), evidenceHash: stringAt(feedback.evidenceHash, path + ".evidenceHash"), purchaseBinding: feedback.purchaseBinding };
-  });
-  return { schemaVersion: "agent.input.v1", role, view: input.view as JevRoleView, feedbacks };
+  const policy = objectAt(input.policy, "input.policy") as unknown as PolicySnapshot;
+  let approved: PolicySnapshot;
+  try { approved = getPolicySnapshot(policy.policyId, policy.version); }
+  catch { return fail("input.policy", "不是已批准的 PolicySnapshot"); }
+  if (canonicalJson(policy) !== canonicalJson(approved)) fail("input.policy", "内容与已批准快照不一致");
+  return { schemaVersion: "agent.input.v1", role, view: input.view as JevRoleView, policy: approved };
 }
 
+export function parseAgentOutput(role: "production", inputValue: unknown, value: unknown): ProductionAgentOutput;
+export function parseAgentOutput(role: "inspection", inputValue: unknown, value: unknown): InspectionAgentOutput;
+export function parseAgentOutput(role: "consumer", inputValue: unknown, value: unknown): ConsumerAgentOutput;
+export function parseAgentOutput(role: AgentRole, inputValue: unknown, value: unknown): AgentOutput;
 export function parseAgentOutput(role: AgentRole, inputValue: unknown, value: unknown): AgentOutput {
   const input = parseAgentInput(role, inputValue);
   const output = objectAt(value, "output");
-  const keys = role === "consumer_feedback" ? ["schemaVersion", "role", "batchId", "themes", "anomalies"] : ["schemaVersion", "role", "batchId", "findings"];
-  exactKeys(output, keys, "output");
+  exactKeys(output, role === "consumer" ? ["schemaVersion", "role", "batchId", "selectedFactIds"] : ["schemaVersion", "role", "batchId", "findings"], "output");
   literal(output.schemaVersion, "agent.output.v1", "output.schemaVersion");
   literal(output.role, role, "output.role");
-  const batchId = input.view.context.batch.batchId;
+  const batchId = role === "consumer" ? (input as ConsumerAgentInput).batchId : (input as ProductionAgentInput | InspectionAgentInput).view.context.batch.batchId;
   literal(output.batchId, batchId, "output.batchId");
-  const allowedSourceIds = new Set(input.view.context.evidence.map((item) => item.evidenceId));
 
-  if (role === "consumer_feedback") {
-    const consumerInput = input as ConsumerFeedbackAgentInput;
-    for (const feedback of consumerInput.feedbacks) allowedSourceIds.add(feedback.feedbackId);
-    return { schemaVersion: "agent.output.v1", role, batchId, themes: parseFindings(output.themes, allowedSourceIds, "output.themes"), anomalies: parseFindings(output.anomalies, allowedSourceIds, "output.anomalies") };
+  if (role === "consumer") {
+    const consumerInput = input as ConsumerAgentInput;
+    const selectedFactIds = stringArray(output.selectedFactIds, "output.selectedFactIds");
+    const allowedFactIds = new Set(consumerInput.evidenceCard.facts.map((_, index) => "F" + index));
+    if (selectedFactIds.length > 30 || new Set(selectedFactIds).size !== selectedFactIds.length) fail("output.selectedFactIds", "最多 30 个且不能重复");
+    if (selectedFactIds.some((id) => !allowedFactIds.has(id))) fail("output.selectedFactIds", "只能选择证据卡中已登记的事实 ID");
+    return { schemaVersion: "agent.output.v1", role, batchId, selectedFactIds };
   }
 
+  const evidenceInput = input as ProductionAgentInput | InspectionAgentInput;
+  const allowedSourceIds = new Set(evidenceInput.view.context.evidence.map((item) => item.evidenceId));
   const findings = parseFindings(output.findings, allowedSourceIds, "output.findings");
-  return { schemaVersion: "agent.output.v1", role, batchId, findings };
+  return role === "production"
+    ? { schemaVersion: "agent.output.v1", role, batchId, findings }
+    : { schemaVersion: "agent.output.v1", role, batchId, findings };
+}
+
+function parseUpstreamOutput(role: "production", value: unknown, batchId: string): ProductionAgentOutput;
+function parseUpstreamOutput(role: "inspection", value: unknown, batchId: string): InspectionAgentOutput;
+function parseUpstreamOutput(role: "production" | "inspection", value: unknown, batchId: string): ProductionAgentOutput | InspectionAgentOutput {
+  const path = "input.analyses." + role;
+  const output = objectAt(value, path);
+  exactKeys(output, ["schemaVersion", "role", "batchId", "findings"], path);
+  literal(output.schemaVersion, "agent.output.v1", path + ".schemaVersion");
+  literal(output.role, role, path + ".role");
+  literal(output.batchId, batchId, path + ".batchId");
+  const rawFindings = output.findings;
+  if (!Array.isArray(rawFindings) || rawFindings.length > 30) fail(path + ".findings", "必须是最多 30 项的数组");
+  const sourceIds = new Set(rawFindings.flatMap((item) => {
+    const finding = objectAt(item, path + ".findings");
+    return Array.isArray(finding.sourceIds) ? finding.sourceIds.filter((id): id is string => typeof id === "string") : [];
+  }));
+  const findings = parseFindings(rawFindings, sourceIds, path + ".findings");
+  return role === "production"
+    ? { schemaVersion: "agent.output.v1", role, batchId, findings }
+    : { schemaVersion: "agent.output.v1", role, batchId, findings };
+}
+
+function parseConsumerCard(value: unknown, batchId: string): ConsumerAnswer {
+  const card = objectAt(value, "input.evidenceCard");
+  exactKeys(card, ["batchId", "decision", "headline", "facts", "uncertainties", "nextActions", "evidenceIds", "dataMode"], "input.evidenceCard");
+  literal(card.batchId, batchId, "input.evidenceCard.batchId");
+  if (!["accepted", "partial", "rejected", "review", "not_assessed"].includes(String(card.decision))) fail("input.evidenceCard.decision", "状态无效");
+  if (card.dataMode !== "demo/synthetic" && card.dataMode !== "external") fail("input.evidenceCard.dataMode", "模式无效");
+  return {
+    batchId,
+    decision: card.decision as ConsumerAnswer["decision"],
+    headline: stringAt(card.headline, "input.evidenceCard.headline"),
+    facts: stringArray(card.facts, "input.evidenceCard.facts"),
+    uncertainties: stringArray(card.uncertainties, "input.evidenceCard.uncertainties"),
+    nextActions: stringArray(card.nextActions, "input.evidenceCard.nextActions"),
+    evidenceIds: stringArray(card.evidenceIds, "input.evidenceCard.evidenceIds"),
+    dataMode: card.dataMode,
+  };
 }
 
 function parseFindings(value: unknown, allowedIds: Set<string>, path: string): AgentFinding[] {
@@ -122,7 +168,7 @@ function parseFindings(value: unknown, allowedIds: Set<string>, path: string): A
     if (summary.length > 500) fail(itemPath + ".summary", "最多 500 字符");
     const sourceIds = stringArray(item.sourceIds, itemPath + ".sourceIds");
     if (sourceIds.length === 0) fail(itemPath + ".sourceIds", "每条 Agent 发现必须引用至少一个来源 ID");
-    if (sourceIds.some((id) => !allowedIds.has(id))) fail(itemPath + ".sourceIds", "包含输入中不存在的证据/反馈 ID");
+    if (sourceIds.some((id) => !allowedIds.has(id))) fail(itemPath + ".sourceIds", "包含输入中不存在的证据 ID");
     return { code, summary, sourceIds };
   });
 }

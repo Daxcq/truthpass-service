@@ -1,6 +1,6 @@
 import { sha256Hex } from "../hash.js";
 import { canonicalJson } from "./canonical.js";
-import type { BatchRecord, EvidenceRecord, NewEvidenceRecord, ProductRecord, ProductionEvent } from "./model.js";
+import type { BatchRecord, EvidenceRecord, EvidenceStatus, NewEvidenceRecord, ProductRecord, ProductionEvent } from "./model.js";
 import { validateBatch, validateEvidence, validateProduct, validateProductionEvent } from "./validation.js";
 
 export class MemoryDataRepository {
@@ -47,6 +47,12 @@ export class MemoryDataRepository {
     const stored = structuredClone(record);
     this.evidence.set(stored.evidenceId, stored);
     return structuredClone(stored);
+  }
+
+  async importEvidence(input: NewEvidenceRecord, status: EvidenceStatus): Promise<EvidenceRecord> {
+    const imported = await this.addEvidence(input);
+    if (status === "revoked") this.revokeEvidence(imported.evidenceId);
+    return this.getEvidence(imported.evidenceId)!;
   }
 
   getProduct(productId: string): ProductRecord | undefined {

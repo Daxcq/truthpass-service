@@ -17,6 +17,25 @@ export class ToolBoundaryError extends Error {
   }
 }
 
+export type AgentToolName =
+  | "getBatch"
+  | "getEvidenceView"
+  | "getPolicy"
+  | "verifyServiceExecution"
+  | "assessProductBatch"
+  | "listEvidenceMetadata";
+
+const sharedTools = ["getBatch", "getEvidenceView", "listEvidenceMetadata"] as const;
+const roleToolAllowlist: Record<JevRole, readonly AgentToolName[]> = {
+  production: sharedTools,
+  inspection: [...sharedTools, "getPolicy", "verifyServiceExecution", "assessProductBatch"],
+  consumer_feedback: sharedTools,
+};
+
+export function getAgentToolAllowlist(role: JevRole): readonly AgentToolName[] {
+  return [...roleToolAllowlist[role]];
+}
+
 export class TruthPassTools {
   #repository: MemoryDataRepository;
   #role: JevRole;
@@ -33,12 +52,14 @@ export class TruthPassTools {
   }
 
   getBatch(input: { batchId: string }): BatchRecord {
+    this.requireTool("getBatch");
     const batch = this.#repository.getBatch(input.batchId);
     if (!batch) throw new ToolBoundaryError("batch 不存在", "BATCH_NOT_FOUND");
     return structuredClone(batch);
   }
 
   getEvidenceView(input: { batchId: string }): JevRoleView {
+    this.requireTool("getEvidenceView");
     try {
       return structuredClone(buildJevRoleView(buildJevContext(this.#repository, input.batchId), this.#role));
     } catch (error) {
@@ -47,6 +68,7 @@ export class TruthPassTools {
   }
 
   getPolicy(input: { policyId: string; policyVersion: string }): PolicySnapshot {
+    this.requireTool("getPolicy");
     try {
       return structuredClone(getPolicySnapshot(input.policyId, input.policyVersion));
     } catch (error) {
@@ -55,25 +77,26 @@ export class TruthPassTools {
   }
 
   async verifyServiceExecution(input: { task: TaskRequest; evidenceId: string }): Promise<ServiceExecutionResult> {
-    this.requireInspectionRole();
+    this.requireTool("verifyServiceExecution");
     const loaded = await this.loadExecutionEvidence(input.task, input.evidenceId);
     return structuredClone(await verifyServiceExecution(input.task, loaded.evidence, loaded.signatureVerification));
   }
 
   async assessProductBatch(input: { task: TaskRequest; evidenceId: string }): Promise<ProductBatchAssessment> {
-    this.requireInspectionRole();
+    this.requireTool("assessProductBatch");
     const loaded = await this.loadExecutionEvidence(input.task, input.evidenceId);
     return structuredClone(await assessProductBatch(input.task, loaded.evidence));
   }
 
   listEvidenceMetadata(batchId: string): Array<Pick<EvidenceRecord, "evidenceId" | "batchId" | "kind" | "issuerId" | "payloadHash" | "status">> {
+    this.requireTool("listEvidenceMetadata");
     if (!this.#repository.getBatch(batchId)) throw new ToolBoundaryError("batch 不存在", "BATCH_NOT_FOUND");
     return structuredClone(this.#repository.listEvidence(batchId).map(({ evidenceId, batchId: id, kind, issuerId, payloadHash, status }) => ({ evidenceId, batchId: id, kind, issuerId, payloadHash, status })));
   }
 
-  private requireInspectionRole(): void {
-    if (this.#role !== "inspection") {
-      throw new ToolBoundaryError("当前角色无权调用确定性验收工具", "TOOL_FORBIDDEN");
+  private requireTool(tool: AgentToolName): void {
+    if (!roleToolAllowlist[this.#role].includes(tool)) {
+      throw new ToolBoundaryError("当前角色无权调用工具 " + tool, "TOOL_FORBIDDEN");
     }
   }
 

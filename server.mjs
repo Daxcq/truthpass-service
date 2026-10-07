@@ -7,6 +7,11 @@ import { TypesafeClient } from "./src/typesafe/api.ts";
 import { MemoryDataRepository } from "./src/data/repository.ts";
 import { fishOilBatch, fishOilEvidence, fishOilProduct } from "./src/data/fixtures.ts";
 import { buildProductionPublicSummary } from "./src/production.ts";
+import { answerConsumerQuestion } from "./src/agents/consumer-assistant.ts";
+import { runAgentCollaboration } from "./src/agents/collaboration.ts";
+import { createCompatibleAgentInvoker } from "./src/agents/compatible-invoker.ts";
+import { buildJevContext, buildJevRoleView } from "./src/jev/context.ts";
+import { getPolicySnapshot } from "./src/rules/policy.ts";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const WEB_DIST = join(__dirname, "web", "dist");
@@ -14,6 +19,7 @@ const WEB = existsSync(WEB_DIST) ? WEB_DIST : join(__dirname, "web");
 const EXAMPLES = join(__dirname, "examples");
 const PORT = process.env.PORT || 4173;
 const typesafe = new TypesafeClient();
+const invokeAgent = createCompatibleAgentInvoker();
 const productionRepository = new MemoryDataRepository();
 productionRepository.createProduct(fishOilProduct);
 productionRepository.createBatch(fishOilBatch);
@@ -105,70 +111,34 @@ async function runJevDetection() {
   };
 }
 
-const chatScripts = {
-  default: [
-    { cls: "cmd", text: "$ zhenyan check --batch FO-2026-001" },
-    { cls: "plain", text: "正在查询多源证据..." },
-    { cls: "check", text: "✓ 读取设备采集数据" },
-    { cls: "check", text: "✓ 关联检测报告" },
-    { cls: "check", text: "✓ 执行规则验收（9 项）" },
-    { cls: "check", text: "✓ 验证链上记录" },
-    { cls: "check", text: "✓ 生成结论..." },
-    { cls: "lead", text: "这批鱼油 FO-2026-001" },
-    { cls: "conclusion", text: "按当前规则通过。" },
-    { cls: "conclusion", text: "基于设备采集、检测报告、冷链记录与链上锚定等多源证据，未发现与规则冲突的异常。" },
-    { cls: "conclusion", text: "该结论适用于当前公开的规则与数据范围。" },
-    { cls: "disclaimer", text: "ⓘ 这是基于现有证据综合判断，并不代表对未来或其他批次的保证。" },
-  ],
-  origin: [
-    { cls: "cmd", text: "$ zhenyan origin --batch FO-2026-001" },
-    { cls: "check", text: "✓ 读取生产档案" },
-    { cls: "check", text: "✓ 核对来源声明" },
-    { cls: "conclusion", text: "原料来自北太平洋海域，生产日期 2026-01-12。" },
-    { cls: "conclusion", text: "全程冷链运输，经海关清关后进入保税仓。" },
-    { cls: "disclaimer", text: "以上为厂商自报来源，演示数据 demo/synthetic。" },
-  ],
-  metrics: [
-    { cls: "cmd", text: "$ zhenyan metrics --batch FO-2026-001" },
-    { cls: "check", text: "✓ 读取第三方检测报告" },
-    { cls: "conclusion", text: "EPA+DHA 78%（门槛 ≥70%）；过氧化值 2.1 meq/kg（≤5）；TOTOX 11（≤20）；冷链中断 2h（≤6h）。" },
-    { cls: "conclusion", text: "检测签名有效，报告批次与商品批次一致。" },
-  ],
-  rules: [
-    { cls: "cmd", text: "$ zhenyan rules --v1.0" },
-    { cls: "check", text: "✓ 任务匹配 · 批次匹配 · 时间逻辑 · 签名有效 · 物流连续" },
-    { cls: "check", text: "✓ EPA+DHA · 过氧化值 · TOTOX · 冷链" },
-    { cls: "conclusion", text: "当前规则共 9 项，本批次全部通过，判定为 accepted。" },
-  ],
-  cold: [
-    { cls: "cmd", text: "$ zhenyan coldchain --batch FO-2026-001" },
-    { cls: "check", text: "✓ 读取温度传感器记录" },
-    { cls: "check", text: "✓ 校验冷链连续性" },
-    { cls: "conclusion", text: "全程冷链，累计中断 2 小时，未超过 6 小时上限。" },
-  ],
-  fallback: [
-    { cls: "plain", text: "抱歉，我目前只能回答该批次已公开的产地、检测项、规则与冷链证据。" },
-    { cls: "conclusion", text: "其他问题请咨询对应服务方。" },
-  ],
-};
-
-function detectIntent(text) {
-  if (/产地|来源|海域|在哪|哪里/.test(text)) return "origin";
-  if (/检测|指标|含量|过氧化|epa|dha|totox/i.test(text)) return "metrics";
-  if (/规则|怎么判定|为什么通过|标准/.test(text)) return "rules";
-  if (/冷链|温度|物流|运输/.test(text)) return "cold";
-  if (/质量|值得|信|怎么样|如何|可靠/.test(text)) return "default";
-  return "fallback";
-}
-
 function sseWrite(res, obj) {
   res.write(`data: ${JSON.stringify(obj)}\n\n`);
+}
+
+async function analyzeWithAgents(question, evidenceCard) {
+  if (!process.env.AGENT_API_KEY || !process.env.AGENT_MODEL) return { status: "not_configured", findings: [] };
+  try {
+    const context = buildJevContext(productionRepository, fishOilBatch.batchId);
+    const productionInput = { schemaVersion: "agent.input.v1", role: "production", view: buildJevRoleView(context, "production") };
+    const inspectionInput = { schemaVersion: "agent.input.v1", role: "inspection", view: buildJevRoleView(context, "inspection"), policy: getPolicySnapshot("fish-oil-quality", "v1") };
+    const result = await runAgentCollaboration(productionInput, inspectionInput, question, evidenceCard, invokeAgent);
+    return { status: "completed", response: result.consumer.response, sourceIds: result.consumer.sourceIds };
+  } catch (error) {
+    console.error("[agent] advisory model unavailable:", error instanceof Error ? error.message : "unknown error");
+    return { status: "unavailable", findings: [] };
+  }
+}
+
+function modelLines(result) {
+  if (result.status === "completed") return [{ cls: "plain", text: result.response + (result.sourceIds.length ? " 依据：" + result.sourceIds.join("、") : "") }];
+  const message = "消费者模型辅助" + (result.status === "not_configured" ? "尚未配置" : "暂不可用") + "；以上回答仍基于已登记证据卡与代码结果。";
+  return [{ cls: "disclaimer", text: message }];
 }
 
 function streamChat(req, res) {
   let body = "";
   req.on("data", (c) => (body += c));
-  req.on("end", () => {
+  req.on("end", async () => {
     let last = "";
     try {
       const parsed = JSON.parse(body || "{}");
@@ -177,22 +147,52 @@ function streamChat(req, res) {
     } catch {
       last = "";
     }
-    const intent = detectIntent(last);
-    const script = chatScripts[intent] || chatScripts.fallback;
+    const snapshot = {
+      batchId: fishOilBatch.batchId,
+      dataMode: fishOilBatch.dataMode,
+      decision: "not_assessed",
+      decisionReasons: [],
+      evidence: productionRepository.listEvidence(fishOilBatch.batchId).map((item) => ({
+        evidenceId: item.evidenceId,
+        kind: item.kind,
+        issuerId: item.issuerId,
+        sourceKind: item.sourceKind,
+        status: item.status,
+        dataMode: item.dataMode,
+        signature: item.attestation ? "not_checked" : "missing",
+      })),
+    };
+    const answer = answerConsumerQuestion(last, snapshot);
+    const modelResult = analyzeWithAgents(last, answer);
+    const script = [
+      { cls: "cmd", text: "$ zhenyan ask --batch " + answer.batchId },
+      { cls: "lead", text: "这批鱼油 " + answer.batchId },
+      { cls: "conclusion", text: answer.headline },
+      ...answer.facts.map((text) => ({ cls: "plain", text })),
+      ...answer.uncertainties.map((text) => ({ cls: "disclaimer", text })),
+      ...answer.nextActions.map((text) => ({ cls: "conclusion", text: "建议：" + text })),
+    ];
+    if (process.env.AGENT_API_KEY && process.env.AGENT_MODEL) {
+      script.splice(3, 0, { cls: "plain", text: "正在整理消费者易读说明（不参与验收或反馈提交）…" });
+    }
 
     res.writeHead(200, {
       "Content-Type": "text/event-stream; charset=utf-8",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
     });
-    sseWrite(res, { kind: "begin", intent });
+    sseWrite(res, { kind: "begin", intent: "consumer_evidence" });
 
     let i = 0;
     const next = () => {
       if (res.writableEnded || res.destroyed) return;
       if (i >= script.length) {
-        sseWrite(res, { kind: "done" });
-        res.end();
+        void modelResult.then((result) => {
+          if (res.writableEnded || res.destroyed) return;
+          for (const line of modelLines(result)) sseWrite(res, { kind: "line", cls: line.cls, text: line.text });
+          sseWrite(res, { kind: "done" });
+          res.end();
+        });
         return;
       }
       const line = script[i++];

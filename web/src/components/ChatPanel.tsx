@@ -10,6 +10,13 @@ const FISH_OIL_BATCHES = [
   { id: "FO-2026-005", name: "南极磷虾油" },
 ];
 
+const QUICK_PROMPTS = [
+  { label: "证据缺口", q: "这批还缺什么证据？" },
+  { label: "签名状态", q: "检测报告的签名能核验吗？" },
+  { label: "能买吗", q: "这批现在能放心买吗？" },
+  { label: "数据来源", q: "这些证据来自谁？" },
+];
+
 function extractBatchId(text: string): string | null {
   const full = text.match(/([A-Z]{2,3}-\d{4}-\d{3})/i);
   if (full) return full[1].toUpperCase();
@@ -57,10 +64,12 @@ export function ChatPanel({
   onStart,
   onDone,
   onBatch,
+  batchId,
 }: {
   onStart: () => void;
   onDone: () => void;
   onBatch: (id: string) => void;
+  batchId: string | null;
 }) {
   const { messages, ask } = useChatStream();
   const [input, setInput] = useState("");
@@ -78,11 +87,11 @@ export function ChatPanel({
   const runVerify = async (question: string, batch?: string) => {
     if (!question.trim() || busy) return;
     setInput("");
-    const bid = batch ?? extractBatchId(question);
+    const bid = batch ?? extractBatchId(question) ?? batchId;
     if (bid) {
       onBatch(bid);
       onStart();
-      await ask(question);
+      await ask(question, bid);
       onDone();
     } else {
       // 随意对话：只对话，不触发验证状态，中间框保持待检测
@@ -128,10 +137,10 @@ export function ChatPanel({
           <img src="/assets/brand-mark.png" alt="" />
         </div>
         <div className="chat-head-text">
-          <strong>与 TruthPass Agent 对话</strong>
+          <strong>真验消费者证据助手</strong>
           <small>
             <span className="status-dot" title="在线" />
-            在线 · 基于真实数据的 AI 助手
+            在线 · 根据登记证据与代码结果解释
           </small>
         </div>
       </div>
@@ -139,8 +148,10 @@ export function ChatPanel({
       <div className="chat-log" ref={chatLogRef} aria-live="polite">
         <div className="msg agent">
           <div className="msg-bubble">
-            <div className="conclusion">你好，请输入商品名或批次号，开始溯源验证。</div>
-            <div className="reason-line">例如：鱼油、燕窝，或批次号 FO-2026-001。</div>
+            <div className="conclusion">
+              你好，请输入商品名或批次号，查看当前登记证据与代码验收结果。
+            </div>
+            <div className="reason-line">页面含 demo/synthetic 数据；缺失证据代表暂时无法核实，不等同于产品不合格，模型提示也不替代规则验收。</div>
           </div>
         </div>
         {messages.map((message) => (
@@ -184,6 +195,14 @@ export function ChatPanel({
               </div>
             )}
           </div>
+        </div>
+        <div className="quick-group">
+          <span className="chat-quick-label">你想了解：</span>
+          {QUICK_PROMPTS.map((prompt) => (
+            <button key={prompt.label} onClick={() => runVerify(prompt.q, batchId ?? "FO-2026-001")} disabled={busy}>
+              {prompt.label}
+            </button>
+          ))}
         </div>
       </div>
 

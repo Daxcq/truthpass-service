@@ -69,17 +69,25 @@ function statusFor(error: unknown): number {
 }
 
 function agentTestInput(role: AgentRole): { input: unknown; sampleOutput: unknown } {
+  if (role === "consumer") {
+    const input = {
+      schemaVersion: "agent.input.v1", role, batchId: task.batchId, question: "这批产品的证据情况怎么样？",
+      evidenceCard: { batchId: task.batchId, decision: "not_assessed", headline: "当前尚无验收结论。", facts: ["已登记生产记录"], uncertainties: ["签名尚未核验"], nextActions: ["补充验证"], evidenceIds: ["ev-production-001"], dataMode: "demo/synthetic" },
+      analyses: {
+        production: { schemaVersion: "agent.output.v1", role: "production", batchId: task.batchId, findings: [{ code: "production_record_found", summary: "找到该批次的生产记录", sourceIds: ["ev-production-001"] }] },
+        inspection: { schemaVersion: "agent.output.v1", role: "inspection", batchId: task.batchId, findings: [{ code: "inspection_report_found", summary: "找到该批次的检测报告", sourceIds: ["ev-inspection-001"] }] },
+      },
+    };
+    parseAgentInput(role, input);
+    return { input, sampleOutput: { schemaVersion: "agent.output.v1", role, batchId: task.batchId, selectedFactIds: ["F0"] } };
+  }
   const view = tools.get(role)!.getEvidenceView({ batchId: task.batchId });
   const input = role === "production"
     ? { schemaVersion: "agent.input.v1", role, view }
-    : role === "inspection"
-      ? { schemaVersion: "agent.input.v1", role, view, policy: getPolicySnapshot("fish-oil-quality", "v1") }
-      : { schemaVersion: "agent.input.v1", role, view, feedbacks: [{ feedbackId: "fb-demo-001", batchId: task.batchId, rating: 4, categories: ["packaging"], evidenceHash: "a".repeat(64), purchaseBinding: "registered_only" }] };
+    : { schemaVersion: "agent.input.v1", role, view, policy: getPolicySnapshot("fish-oil-quality", "v1") };
   parseAgentInput(role, input);
 
-  const sampleOutput = role === "consumer_feedback"
-    ? { schemaVersion: "agent.output.v1", role, batchId: task.batchId, themes: [{ code: "packaging_feedback", summary: "有包装方面的体验反馈", sourceIds: ["fb-demo-001"] }], anomalies: [] }
-    : { schemaVersion: "agent.output.v1", role, batchId: task.batchId, findings: [{ code: role === "production" ? "production_record_found" : "inspection_report_found", summary: role === "production" ? "找到该批次的生产记录" : "找到该批次的检测报告", sourceIds: [role === "production" ? "ev-production-001" : "ev-inspection-001"] }] };
+  const sampleOutput = { schemaVersion: "agent.output.v1", role, batchId: task.batchId, findings: [{ code: role === "production" ? "production_record_found" : "inspection_report_found", summary: role === "production" ? "找到该批次的生产记录" : "找到该批次的检测报告", sourceIds: [role === "production" ? "ev-production-001" : "ev-inspection-001"] }] };
   return { input, sampleOutput };
 }
 
@@ -102,7 +110,7 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "GET" && url.pathname === "/api/test/agents/input") {
       const role = url.searchParams.get("role") as AgentRole;
-      if (!["production", "inspection", "consumer_feedback"].includes(role)) throw new ToolBoundaryError("未知 Agent role", "AGENT_ROLE_INVALID");
+      if (!["production", "inspection", "consumer"].includes(role)) throw new ToolBoundaryError("未知 Agent role", "AGENT_ROLE_INVALID");
       json(response, 200, agentTestInput(role));
       return;
     }
@@ -111,7 +119,7 @@ const server = createServer(async (request, response) => {
       const body = await bodyJson(request);
       if (Object.keys(body).some((key) => !["role", "output"].includes(key))) throw new ToolBoundaryError("测试端点只接受 role 和 output", "INVALID_REQUEST");
       const role = body.role as AgentRole;
-      if (!["production", "inspection", "consumer_feedback"].includes(role)) throw new ToolBoundaryError("未知 Agent role", "AGENT_ROLE_INVALID");
+      if (!["production", "inspection", "consumer"].includes(role)) throw new ToolBoundaryError("未知 Agent role", "AGENT_ROLE_INVALID");
       const { input } = agentTestInput(role);
       const parsed = parseAgentOutput(role, input, body.output);
       json(response, 200, { valid: true, role, batchId: task.batchId, output: parsed });

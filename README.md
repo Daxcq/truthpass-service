@@ -68,11 +68,11 @@ npm run typecheck
 前端（Vite + React + TypeScript + TanStack Query）：
 
 ```bash
-# 开发：先启动 API 服务，再启动 Vite dev server（自动代理 /api）
-npm run web           # node server.mjs，监听 4173
+# 开发：启动共享 API 与静态前端服务，再启动 Vite dev server（自动代理 /api）
+npm run web           # node api-server.ts，监听 4173
 npm run dev           # Vite dev server，监听 5173，代理 /api -> 4173
 
-# 生产：构建后由 server.mjs 直接服务 web/dist
+# 生产：构建后由 api-server.ts 直接服务 web/dist
 npm run build
 npm run web
 ```

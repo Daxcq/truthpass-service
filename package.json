@@ -14,7 +14,7 @@
     "dev": "vite",
     "build": "tsc -p tsconfig.web.json --noEmit && vite build",
     "preview": "vite preview",
-    "web": "node --env-file-if-exists=.env --import=tsx server.mjs"
+    "web": "node --env-file-if-exists=.env --import=tsx api-server.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.59.16",

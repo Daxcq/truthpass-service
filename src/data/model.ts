@@ -54,6 +54,7 @@ export interface ProductionEvent {
   observations: ProductionObservation[];
   deviations: ProductionDeviation[];
   sourceEvidenceIds: string[];
+  legacyPayload?: Record<string, unknown>;
   traceability?: ProductionTraceability;
 }
 

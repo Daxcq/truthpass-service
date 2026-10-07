@@ -47,6 +47,10 @@ function getPool(): Pool {
   return pool;
 }
 
+export function getDatabasePool(): Pool {
+  return getPool();
+}
+
 export function persistenceEnabled(): boolean {
   return process.env.DATA_BACKEND !== "memory" && Boolean(process.env.DATABASE_URL);
 }
