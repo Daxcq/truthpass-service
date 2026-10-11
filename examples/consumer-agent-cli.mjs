@@ -44,6 +44,7 @@ function callTruthPass(args) {
 
 const batchId = process.argv[2] ?? "FO-2026-001";
 const inspection = await callTruthPass(["inspect", "--batch", batchId, "--json"]);
+const explanation = await callTruthPass(["explain", "--batch", batchId, "--json"]);
 const verification = inspection.verification ?? {};
 const chain = inspection.chain ?? {};
 
@@ -56,4 +57,5 @@ console.log(JSON.stringify({
   chainLifecycle: chain.lifecycle ?? "unknown",
   anchored: chain.anchored ?? false,
   nextAction: verification.status === "accepted" ? "show_evidence_then_ask_consent" : "request_more_evidence",
+  translatedExplanation: explanation.explanation ?? null,
 }, null, 2));

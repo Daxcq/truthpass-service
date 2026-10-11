@@ -2,6 +2,9 @@ const state = {
   verifying: false,
   consent: false,
   tags: new Set(),
+  wallet: null,
+  purchaseId: null,
+  lastWalletTx: null,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -25,6 +28,87 @@ function closeObserver() {
   $("#observer-drawer").classList.remove("open");
   $("#drawer-scrim").classList.remove("open");
   $("#observer-drawer").setAttribute("aria-hidden", "true");
+}
+
+function renderWalletState(snapshot) {
+  const status = $("#wallet-status");
+  const connectButtons = ["#connect-wallet", "#wallet-connect-drawer"].map($).filter(Boolean);
+  const actionButtons = ["#wallet-anchor", "#wallet-purchase", "#wallet-dispute"].map($).filter(Boolean);
+  const contributionButton = $("#wallet-contribution");
+  if (!snapshot?.connected) {
+    if (status) status.textContent = "未连接";
+    connectButtons.forEach((button) => { button.textContent = "连接钱包"; });
+    actionButtons.forEach((button) => { button.disabled = true; });
+    if (contributionButton) contributionButton.disabled = true;
+    return;
+  }
+  const short = `${snapshot.account.slice(0, 6)}…${snapshot.account.slice(-4)}`;
+  if (status) status.textContent = `${snapshot.provider} · ${short} · Chain ${snapshot.chainIdNumber}`;
+  connectButtons.forEach((button) => { button.textContent = `${snapshot.provider} ${short}`; });
+  actionButtons.forEach((button) => { button.disabled = false; });
+  if (contributionButton) contributionButton.disabled = !state.purchaseId;
+}
+
+function renderWalletTx(result, action) {
+  const node = $("#wallet-tx");
+  if (!node) return;
+  node.hidden = false;
+  node.replaceChildren();
+  const line = document.createElement("div");
+  line.textContent = `${action} 已确认 · ${result.txHash.slice(0, 12)}…`;
+  const link = document.createElement("a");
+  link.href = result.explorerUrl;
+  link.target = "_blank";
+  link.rel = "noreferrer";
+  link.textContent = " 在 BOT Chain 浏览器查看";
+  node.append(line, link);
+}
+
+async function connectWallet() {
+  try {
+    const snapshot = await window.TruthPassWallet.connect();
+    state.wallet = snapshot;
+    renderWalletState(snapshot);
+    toast(`钱包已连接：${snapshot.provider} · Chain ID ${snapshot.chainIdNumber}`);
+  } catch (error) {
+    toast(error instanceof Error ? error.message : "钱包连接失败");
+  }
+}
+
+async function executeWalletAction(action) {
+  if (!state.wallet?.connected) {
+    await connectWallet();
+    if (!state.wallet?.connected) return;
+  }
+  const body = {
+    action,
+    wallet: state.wallet.account,
+    batchId: "FO-2026-001",
+    clientNonce: `${action}-${window.crypto?.randomUUID?.() ?? Date.now()}`,
+  };
+  if (action === "contribution") {
+    if (!state.purchaseId) {
+      toast("请先完成购买登记，再提交消费者反馈");
+      return;
+    }
+    body.purchaseId = state.purchaseId;
+    body.score = 90;
+  }
+  const response = await fetch("/api/wallet/prepare", {
+    method: "POST",
+    headers: { "content-type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(body),
+  });
+  const prepared = await response.json();
+  if (!response.ok) throw new Error(prepared.message ?? `钱包交易准备失败 HTTP ${response.status}`);
+  toast(`${action} 已准备，等待钱包确认 ${prepared.requiredRole}`);
+  const result = await window.TruthPassWallet.sendPreparedTransaction(prepared.transaction);
+  state.lastWalletTx = result;
+  if (action === "purchase") state.purchaseId = prepared.ids.purchaseId;
+  state.wallet = await window.TruthPassWallet.state();
+  renderWalletState(state.wallet);
+  renderWalletTx(result, action);
+  toast(`${action} 已写入 BOT Chain`);
 }
 
 async function runVerification() {
@@ -139,6 +223,12 @@ async function loadRuntimeStatus() {
   }
 }
 
+$("#connect-wallet").addEventListener("click", connectWallet);
+$("#wallet-connect-drawer").addEventListener("click", connectWallet);
+$("#wallet-anchor").addEventListener("click", () => executeWalletAction("evidence").catch((error) => toast(error instanceof Error ? error.message : "证据交易失败")));
+$("#wallet-purchase").addEventListener("click", () => executeWalletAction("purchase").catch((error) => toast(error instanceof Error ? error.message : "购买交易失败")));
+$("#wallet-dispute").addEventListener("click", () => executeWalletAction("dispute").catch((error) => toast(error instanceof Error ? error.message : "质疑交易失败")));
+$("#wallet-contribution").addEventListener("click", () => executeWalletAction("contribution").catch((error) => toast(error instanceof Error ? error.message : "反馈交易失败")));
 $("#run-verification").addEventListener("click", runVerification);
 $("#copy-command").addEventListener("click", copyCommand);
 $("#jump-chain").addEventListener("click", () => $("#journey").scrollIntoView({ behavior: "smooth" }));

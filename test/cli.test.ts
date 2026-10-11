@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { unlinkSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
-import { runCli } from "../src/cli.js";
+import { runCli, textFor } from "../src/cli.js";
 
 test("CLI doctor returns safe fixture and chain status without secrets", async () => {
   const result = await runCli(["doctor", "--json"]);
@@ -89,4 +89,38 @@ test("CLI inspect reports unavailable chain manifest without claiming anchored",
     if (previous === undefined) delete process.env.TRUTHPASS_MAINNET_REPLAY_MANIFEST;
     else process.env.TRUTHPASS_MAINNET_REPLAY_MANIFEST = previous;
   }
+});
+
+
+test("CLI accepts a batch ID as the consumer Agent shortcut", async () => {
+  const direct = await runCli(["FO-2026-001", "--json"]);
+  const explicit = await runCli(["inspect", "--batch", "FO-2026-001", "--json"]);
+  assert.equal(direct.exitCode, 0);
+  const directValue = direct.value as Record<string, any>;
+  const explicitValue = explicit.value as Record<string, any>;
+  assert.equal(directValue.command, "inspect");
+  assert.equal(directValue.batch.id, "FO-2026-001");
+  assert.equal(directValue.evidence.hash, explicitValue.evidence.hash);
+  assert.equal(directValue.chain.anchored, true);
+});
+
+test("CLI explain translates verified evidence for a human consumer", async () => {
+  const result = await runCli(["explain", "FO-2026-001"]);
+  assert.equal(result.exitCode, 0);
+  const value = result.value as Record<string, any>;
+  assert.equal(value.command, "explain");
+  const text = String(value.explanation);
+  assert.match(text, /EPA\+DHA 78%/);
+  assert.match(text, /JEV：当前为 deterministic fallback/);
+  assert.match(text, /确定性 Verifier/);
+  assert.match(text, /Chain ID 677/);
+  assert.match(text, /demo\/synthetic/);
+});
+
+test("CLI inspect text uses the batch ID and chain state", async () => {
+  const result = await runCli(["inspect", "FO-2026-001"]);
+  assert.equal(result.exitCode, 0);
+  const text = textFor(result.value as Record<string, unknown>);
+  assert.match(text, /批次 FO-2026-001：accepted/);
+  assert.doesNotMatch(text, /undefined/);
 });

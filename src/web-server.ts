@@ -3,8 +3,15 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { anchorPlan, evaluateBatch } from "./cli.js";
-import { BotChainClient } from "./chain.js";
+import { anchorPlan, evaluateBatch, inspectBatch } from "./cli.js";
+import {
+  BotChainClient,
+  buildEvidenceAnchorTransaction,
+  buildRaiseDisputeTransaction,
+  buildRecordContributionTransaction,
+  buildRecordPurchaseTransaction,
+  buildRecordVerificationTransaction,
+} from "./chain.js";
 import { getBotChainConfig } from "./chain-config.js";
 import { ConsumerParticipationRegistry } from "./consumer.js";
 import { replayFishOilFlow } from "./replay.js";
@@ -57,6 +64,8 @@ function sendJson(response: ServerResponse, status: number, value: unknown): voi
     "content-type": "application/json; charset=utf-8",
     "cache-control": "no-store",
     "access-control-allow-origin": "*",
+    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-headers": "content-type, authorization, x-truthpass-agent",
   });
   response.end(payload);
 }
@@ -115,7 +124,7 @@ export async function getMainnetStatus(): Promise<Record<string, unknown>> {
 
   try {
     const config = getBotChainConfig("mainnet", { contractAddress });
-    const client = new BotChainClient({ config, dryRun: true });
+    const client = new BotChainClient({ config, dryRun: true, timeoutMs: 3_000 });
     const chainId = await client.assertNetwork();
     const code = await client.getCode(contractAddress);
     const domainSeparator = await client.getDomainSeparator();
@@ -135,13 +144,327 @@ export async function getMainnetStatus(): Promise<Record<string, unknown>> {
   }
 }
 
+type RegisteredAgent = {
+  agentId: string;
+  name: string;
+  capabilities: string[];
+  publicKey?: string;
+  registrationId: string;
+  registeredAt: string;
+  dataClass: "demo/synthetic";
+};
+
+const registeredAgents = new Map<string, RegisteredAgent>();
+
+function normalizeAgentRegistration(body: Record<string, unknown>): Omit<RegisteredAgent, "registrationId" | "registeredAt" | "dataClass"> {
+  const agentId = typeof body.agentId === "string" ? body.agentId.trim() : "";
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  const capabilities = Array.isArray(body.capabilities)
+    ? body.capabilities.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim()).slice(0, 32)
+    : [];
+  const publicKey = typeof body.publicKey === "string" && body.publicKey.trim().length > 0 ? body.publicKey.trim() : undefined;
+  if (!/^[A-Za-z0-9._:-]{3,128}$/.test(agentId)) throw new Error("agentId must be 3-128 characters using letters, digits, ., _, :, or -");
+  if (!name || name.length > 128) throw new Error("name must be 1-128 characters");
+  if (capabilities.length === 0) throw new Error("capabilities must contain at least one value");
+  if (publicKey && publicKey.length > 2048) throw new Error("publicKey is too long");
+  return { agentId, name, capabilities, publicKey };
+}
+
+async function buildAgentRegistration(body: Record<string, unknown>): Promise<RegisteredAgent> {
+  const input = normalizeAgentRegistration(body);
+  const registeredAt = new Date().toISOString();
+  const registrationId = await sha256("truthpass:agent-registration:" + input.agentId + ":" + registeredAt);
+  const record: RegisteredAgent = { ...input, registrationId, registeredAt, dataClass: "demo/synthetic" };
+  registeredAgents.set(input.agentId, record);
+  return record;
+}
+
+function buildConsumerSummary(inspection: Record<string, unknown>): string {
+  const status = inspection.status === "accepted" || inspection.status === "accepted_with_scope" ? "按当前规则通过验收" : "暂未通过当前规则";
+  const dataClass = inspection.dataClass === "demo/synthetic" ? "当前为演示数据" : "当前为外部数据";
+  const jev = inspection.jev && typeof inspection.jev === "object" ? inspection.jev as Record<string, unknown> : {};
+  const route = typeof jev.route === "string" ? jev.route : "等待证据路由";
+  return status + "；" + dataClass + "；Agent 路由：" + route + "。最终结论来自确定性规则，模型只负责解释。";
+}
+
+function requiredString(value: unknown, field: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) throw new Error(`${field} must be a non-empty string`);
+  return value.trim();
+}
+
+function bytes32OrHash(value: unknown, field: string, fallback?: string): string {
+  const raw = typeof value === "string" && value.trim().length > 0 ? value.trim() : fallback;
+  if (!raw) throw new Error(`${field} is required`);
+  const normalized = raw.startsWith("0x") ? raw : sha256(raw);
+  if (!/^0x[0-9a-fA-F]{64}$/.test(normalized)) throw new Error(`${field} must be bytes32 or plain text`);
+  return normalized;
+}
+
+function walletAddress(value: unknown): string {
+  const address = requiredString(value, "wallet");
+  if (!/^0x[0-9a-fA-F]{40}$/.test(address)) throw new Error("wallet must be an EVM address");
+  return address;
+}
+
+function publicOrigin(request: IncomingMessage, fallback: URL): string {
+  const configured = process.env.TRUTHPASS_PUBLIC_URL?.trim();
+  if (configured) return configured.replace(/\/+$/, "");
+  const forwardedProto = request.headers["x-forwarded-proto"];
+  const forwardedHost = request.headers["x-forwarded-host"];
+  const protocol = (Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto)?.split(",")[0]?.trim() || "http";
+  const host = (Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost)?.split(",")[0]?.trim()
+    || request.headers.host
+    || fallback.host;
+  return `${protocol}://${host}`;
+}
+
+async function prepareWalletTransaction(body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  loadLocalEnv();
+  const action = requiredString(body.action, "action");
+  const wallet = walletAddress(body.wallet);
+  const batchId = typeof body.batchId === "string" && body.batchId.trim() ? body.batchId.trim() : BATCH_ID;
+  const clientNonce = typeof body.clientNonce === "string" && body.clientNonce.trim()
+    ? body.clientNonce.trim()
+    : `wallet-${Date.now()}`;
+
+  // Transaction preparation is intentionally metadata-first.  The public
+  // deployment manifest contains the verified contract/domain/chain tuple,
+  // so a transient RPC outage cannot prevent a wallet from composing a
+  // transaction.  RPC-backed health/receipt reads remain available through
+  // the dedicated status and replay endpoints.
+  const deployment = await loadDeployment();
+  const replayManifest = await loadReplayManifest();
+  const metadataAddress = typeof deployment.contract?.address === "string" ? deployment.contract.address : "";
+  const configuredAddress = typeof process.env.TRUTHPASS_CONTRACT_ADDRESS === "string"
+    ? process.env.TRUTHPASS_CONTRACT_ADDRESS.trim()
+    : "";
+  if (configuredAddress && metadataAddress && configuredAddress.toLowerCase() !== metadataAddress.toLowerCase()) {
+    throw new Error("TRUTHPASS_CONTRACT_ADDRESS does not match verified BOT Chain deployment metadata");
+  }
+  const contractAddress = configuredAddress || metadataAddress;
+  const chainId = Number(deployment.chainId ?? 0);
+  const domainSeparator = typeof deployment.contract?.domainSeparator === "string"
+    ? deployment.contract.domainSeparator
+    : "";
+  if (chainId !== 677 || !contractAddress || !domainSeparator) {
+    throw new Error("BOT Chain deployment metadata is incomplete (contract address, domain separator and chainId 677 are required)");
+  }
+  const config = getBotChainConfig("mainnet", { contractAddress });
+  const replay = replayManifest && typeof replayManifest === "object"
+    ? replayManifest as Record<string, unknown>
+    : {};
+  const replayIds = replay.ids && typeof replay.ids === "object" ? replay.ids as Record<string, unknown> : {};
+  const explorerUrl = typeof deployment.explorerUrl === "string" ? deployment.explorerUrl : "https://scan.botchain.ai";
+
+  if (action === "evidence") {
+    const requestId = bytes32OrHash(body.requestId, "requestId", `evidence-request:${wallet}:${batchId}:${clientNonce}`);
+    const evidenceRoot = bytes32OrHash(body.evidenceRoot, "evidenceRoot", `evidence-root:${wallet}:${batchId}:${clientNonce}`);
+    const transaction = buildEvidenceAnchorTransaction({
+      requestId,
+      evidenceRoot,
+      subjectHash: bytes32OrHash(body.subjectHash, "subjectHash", `subject:${batchId}`),
+      schemaHash: bytes32OrHash(body.schemaHash, "schemaHash", "evidence.v1"),
+      sourceHash: bytes32OrHash(body.sourceHash, "sourceHash", `source:${wallet}`),
+      state: 1,
+      domainSeparator,
+      contractAddress,
+    }, config);
+    return { schemaVersion: "truthpass.wallet.transaction.v1", action, batchId, network: "bot-mainnet", chainId, contractAddress, explorerUrl, requiredRole: "EVIDENCE_WRITER_ROLE", ids: { requestId, evidenceRoot }, transaction };
+  }
+
+  if (action === "verification") {
+    const evidenceRoot = bytes32OrHash(body.evidenceRoot ?? replayIds.evidenceRoot, "evidenceRoot");
+    const requestId = bytes32OrHash(body.requestId, "requestId", `verification-request:${wallet}:${batchId}:${clientNonce}`);
+    const transaction = buildRecordVerificationTransaction({
+      requestId,
+      evidenceRoot,
+      taskHash: bytes32OrHash(body.taskHash, "taskHash", `task:${batchId}`),
+      policyHash: bytes32OrHash(body.policyHash, "policyHash", "food-quality-v1"),
+      verifierVersionHash: bytes32OrHash(body.verifierVersionHash, "verifierVersionHash", "truthpass-verifier-v1"),
+      resultHash: bytes32OrHash(body.resultHash, "resultHash", `accepted:${batchId}`),
+      state: 1,
+      scope: Number.isInteger(body.scope) ? Number(body.scope) : 15,
+      domainSeparator,
+      contractAddress,
+    }, config);
+    return { schemaVersion: "truthpass.wallet.transaction.v1", action, batchId, network: "bot-mainnet", chainId, contractAddress, explorerUrl, requiredRole: "VERIFIER_ROLE", ids: { requestId, evidenceRoot }, transaction };
+  }
+
+  if (action === "purchase") {
+    const purchaseId = bytes32OrHash(body.purchaseId, "purchaseId", `purchase:${wallet}:${batchId}:${clientNonce}`);
+    const transaction = buildRecordPurchaseTransaction({
+      purchaseId,
+      consumerCommitment: bytes32OrHash(body.consumerCommitment, "consumerCommitment", `consumer:${wallet}`),
+      batchCommitment: bytes32OrHash(body.batchCommitment, "batchCommitment", `batch:${batchId}`),
+      purchaseProofHash: bytes32OrHash(body.purchaseProofHash, "purchaseProofHash", `purchase-proof:${wallet}:${batchId}:${clientNonce}`),
+      consentHash: bytes32OrHash(body.consentHash, "consentHash", `consent:${wallet}:${batchId}`),
+      domainSeparator,
+      contractAddress,
+    }, config);
+    return { schemaVersion: "truthpass.wallet.transaction.v1", action, batchId, network: "bot-mainnet", chainId, contractAddress, explorerUrl, requiredRole: "PURCHASE_WRITER_ROLE", ids: { purchaseId }, transaction };
+  }
+
+  if (action === "contribution") {
+    const purchaseId = bytes32OrHash(body.purchaseId, "purchaseId");
+    const contributionId = bytes32OrHash(body.contributionId, "contributionId", `contribution:${wallet}:${purchaseId}:${clientNonce}`);
+    const transaction = buildRecordContributionTransaction({
+      contributionId,
+      purchaseId,
+      evidenceHash: bytes32OrHash(body.evidenceHash, "evidenceHash", `feedback-evidence:${wallet}:${batchId}`),
+      contributionHash: bytes32OrHash(body.contributionHash, "contributionHash", `feedback:${wallet}:${batchId}:${clientNonce}`),
+      score: Number.isInteger(body.score) ? Math.max(0, Math.min(100, Number(body.score))) : 90,
+      domainSeparator,
+      contractAddress,
+    }, config);
+    return { schemaVersion: "truthpass.wallet.transaction.v1", action, batchId, network: "bot-mainnet", chainId, contractAddress, explorerUrl, requiredRole: "CONTRIBUTION_WRITER_ROLE", ids: { contributionId, purchaseId }, transaction };
+  }
+
+  if (action === "dispute") {
+    const targetKind = Number.isInteger(body.targetKind) ? Number(body.targetKind) : 1;
+    if (![1, 2, 3, 4].includes(targetKind)) throw new Error("targetKind must be 1, 2, 3 or 4");
+    const targetId = bytes32OrHash(body.targetId ?? replayIds.requestId, "targetId");
+    const transaction = buildRaiseDisputeTransaction({
+      disputeId: bytes32OrHash(body.disputeId, "disputeId", `dispute:${wallet}:${targetId}:${clientNonce}`),
+      targetKind: targetKind as 1 | 2 | 3 | 4,
+      targetId,
+      reasonHash: bytes32OrHash(body.reasonHash, "reasonHash", `consumer-question:${batchId}:${clientNonce}`),
+      domainSeparator,
+      contractAddress,
+    }, config);
+    return { schemaVersion: "truthpass.wallet.transaction.v1", action, batchId, network: "bot-mainnet", chainId, contractAddress, explorerUrl, requiredRole: "DISPUTE_ROLE", ids: { targetId }, transaction };
+  }
+
+  throw new Error(`unsupported wallet action: ${action}`);
+}
+
 async function handleApi(url: URL, request: IncomingMessage, response: ServerResponse): Promise<boolean> {
+  if (request.method === "OPTIONS" && url.pathname.startsWith("/api/")) {
+    response.writeHead(204, {
+      "access-control-allow-origin": "*",
+      "access-control-allow-methods": "GET,POST,OPTIONS",
+      "access-control-allow-headers": "content-type, authorization, x-truthpass-agent",
+      "access-control-max-age": "600",
+    });
+    response.end();
+    return true;
+  }
+
   if (request.method === "GET" && url.pathname === "/api/health") {
     return sendJson(response, 200, { status: "ok", service: "truthpass-web-bff", batchId: BATCH_ID, chain: await getMainnetStatus() }), true;
   }
+
+  if (request.method === "GET" && url.pathname === "/api/agent/manifest") {
+    const chain = await getMainnetStatus();
+    const baseUrl = publicOrigin(request, url);
+    return sendJson(response, 200, {
+      schemaVersion: "truthpass.agent.manifest.v1",
+      service: "truthpass",
+      name: "TruthPass Consumer Agent Gateway",
+      version: "0.10.0",
+      status: "ready",
+      dataClass: "demo/synthetic",
+      publicUrl: baseUrl,
+      capabilities: ["agent.register", "consumer.inspect", "cli.inspect", "jev.route", "chain.status", "consumer.feedback", "wallet.prepare"],
+      endpoints: {
+        register: baseUrl + "/api/agent/register",
+        inspection: baseUrl + "/api/consumer/inspection?batchId={batchId}",
+        cliInspect: baseUrl + "/api/cli/inspect?batchId={batchId}",
+        jevDetection: baseUrl + "/api/jev/detection?batchId={batchId}",
+        chainStatus: baseUrl + "/api/chain/status",
+        walletPrepare: baseUrl + "/api/wallet/prepare",
+        health: baseUrl + "/api/health",
+      },
+      cli: {
+        package: "truthpass-service",
+        commands: ["doctor", "discover", "verify", "explain", "recommend", "order", "inspect", "anchor", "replay"],
+        localCommand: "npm run truthpass -- inspect --batch FO-2026-001 --json",
+        networkMode: "api_gateway_required_for_remote_agents",
+        walletActions: ["evidence", "verification", "purchase", "contribution", "dispute"],
+      },
+      chain,
+      publicDataBoundary: {
+        rawReports: "off_chain",
+        personalData: "off_chain",
+        privateKeys: "off_chain",
+        note: "演示环境允许匿名查询；生产环境应增加 Agent 身份认证和请求限流。",
+      },
+    }), true;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/agent/register") {
+    const body = await readJson(request);
+    const record = await buildAgentRegistration(body);
+    return sendJson(response, 201, {
+      schemaVersion: "truthpass.agent.registration.v1",
+      status: "registered_local",
+      dataClass: record.dataClass,
+      agent: record,
+      chainStatus: "not_submitted",
+      nextAction: "使用 registrationId 调用 consumer/inspection；生产环境再由 relayer 将身份承诺锚定到 BOT Chain。",
+    }), true;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/agent/register") {
+    return sendJson(response, 200, {
+      schemaVersion: "truthpass.agent.registry.v1",
+      dataClass: "demo/synthetic",
+      count: registeredAgents.size,
+      agents: [...registeredAgents.values()],
+      chainStatus: "not_submitted",
+    }), true;
+  }
+
   if (request.method === "GET" && url.pathname === "/api/chain/status") {
     return sendJson(response, 200, await getMainnetStatus()), true;
   }
+
+  if (request.method === "GET" && url.pathname === "/api/cli/inspect") {
+    const batchId = url.searchParams.get("batchId") ?? BATCH_ID;
+    const inspection = await inspectBatch(batchId);
+    return sendJson(response, 200, inspection), true;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/consumer/inspection") {
+    const batchId = url.searchParams.get("batchId") ?? BATCH_ID;
+    const inspection = await inspectBatch(batchId);
+    return sendJson(response, 200, {
+      schemaVersion: "truthpass.consumer.inspection.v1",
+      command: "consumer.inspect",
+      batchId,
+      dataClass: inspection.dataClass,
+      product: inspection.product,
+      batch: inspection.batch,
+      quality: inspection.quality,
+      status: inspection.status,
+      verification: inspection.verification,
+      jev: inspection.jev,
+      chain: inspection.chain,
+      summary: buildConsumerSummary(inspection),
+      publicDataBoundary: inspection.publicDataBoundary,
+    }), true;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/jev/detection") {
+    const batchId = url.searchParams.get("batchId") ?? BATCH_ID;
+    const inspection = await inspectBatch(batchId);
+    const jev = inspection.jev && typeof inspection.jev === "object" ? inspection.jev as Record<string, unknown> : {};
+    const decision = jev.decision && typeof jev.decision === "object" ? jev.decision as Record<string, unknown> : {};
+    const verification = inspection.verification && typeof inspection.verification === "object" ? inspection.verification as Record<string, unknown> : {};
+    return sendJson(response, 200, {
+      schemaVersion: "truthpass.jev.detection.v1",
+      batchId,
+      dataClass: inspection.dataClass,
+      model: jev.provider ?? "deterministic-fallback",
+      mode: jev.mode ?? "deterministic_fallback",
+      answers: {
+        route: { choice: jev.route ?? "route_to_rule_verifier", confidence: decision.confidence ?? 1 },
+        evidence_scope: { choice: decision.evidenceScope ?? "epa_dha,oxidation,totox,cold_chain" },
+      },
+      deterministicVerifier: { status: verification.status ?? "unknown", score: verification.score ?? null },
+      decision,
+    }), true;
+  }
+
   if (request.method === "GET" && url.pathname === "/api/verify") {
     const batchId = url.searchParams.get("batchId") ?? BATCH_ID;
     const verification = await evaluateBatch(batchId);
@@ -161,17 +484,24 @@ async function handleApi(url: URL, request: IncomingMessage, response: ServerRes
     } : plan;
     return sendJson(response, 200, { verification, anchor, chain }), true;
   }
+
   if (request.method === "GET" && url.pathname === "/api/replay") {
     const batchId = url.searchParams.get("batchId") ?? BATCH_ID;
     return sendJson(response, 200, await replayFishOilFlow(batchId, "mainnet")), true;
   }
+
+  if (request.method === "POST" && url.pathname === "/api/wallet/prepare") {
+    const body = await readJson(request);
+    return sendJson(response, 200, await prepareWalletTransaction(body)), true;
+  }
+
   if (request.method === "POST" && url.pathname === "/api/feedback") {
     const body = await readJson(request);
     const batchId = typeof body.batchId === "string" ? body.batchId : BATCH_ID;
     const consumerId = typeof body.consumerId === "string" ? body.consumerId : "consumer-web-demo";
     const categories = Array.isArray(body.categories) ? body.categories.filter((item): item is string => typeof item === "string") : [];
     const consent = await consumers.grantConsent({ consumerId, batchId, scopes: ["purchase", "quality-feedback"], grantedAt: new Date().toISOString() });
-    const purchase = await consumers.recordPurchase({ consumerId, batchId, purchaseProofHash: sha256(`${consumerId}:${batchId}`), createdAt: new Date().toISOString() });
+    const purchase = await consumers.recordPurchase({ consumerId, batchId, purchaseProofHash: sha256(consumerId + ":" + batchId), createdAt: new Date().toISOString() });
     const feedback = await consumers.recordFeedback({ purchaseId: purchase.purchaseId, rating: Number(body.rating ?? 5), categories, evidence: { source: "web-demo", tags: categories }, createdAt: new Date().toISOString() });
     return sendJson(response, 201, { ok: true, consentHash: consent.consentHash, purchaseId: purchase.purchaseId, feedbackId: feedback.feedbackId, evidenceHash: feedback.evidenceHash, contributionPoints: feedback.contributionPoints, chainStatus: "anchor_pending" }), true;
   }
@@ -179,7 +509,11 @@ async function handleApi(url: URL, request: IncomingMessage, response: ServerRes
 }
 
 async function serveStatic(url: URL, response: ServerResponse): Promise<void> {
-  const webPath = url.pathname.startsWith("/web-demo/") ? url.pathname.slice("/web-demo".length) : url.pathname;
+  const webPath = url.pathname === "/web-demo"
+    ? "/"
+    : url.pathname.startsWith("/web-demo/")
+      ? url.pathname.slice("/web-demo".length)
+      : url.pathname;
   const relative = decodeURIComponent(webPath === "/" ? "/index.html" : webPath).replace(/^\/+/, "");
   const filePath = resolve(WEB_ROOT, relative);
   if (filePath !== WEB_ROOT && !filePath.startsWith(`${WEB_ROOT}${sep}`)) {

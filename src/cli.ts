@@ -9,7 +9,7 @@ import { replayFishOilFlow } from "./replay.js";
 import { SafeJevDecisionGate } from "./jev/context.js";
 import { loadLocalEnv, providerFromEnv } from "./jev/http-provider.js";
 
-const CLI_VERSION = "0.9.1";
+const CLI_VERSION = "0.9.2";
 const DEMO_BATCH_ID = "FO-2026-001";
 const DEMO_TASK_ID = "task-fish-oil-2026-001";
 
@@ -66,6 +66,7 @@ function parseArgs(argv: string[]): ParsedArgs | { error: string } {
   let command: Command | undefined;
   let json = false;
   let batchId = DEMO_BATCH_ID;
+  let batchArgumentProvided = false;
   let network: "testnet" | "mainnet" = "testnet";
   let dryRun = false;
   let help = false;
@@ -78,7 +79,9 @@ function parseArgs(argv: string[]): ParsedArgs | { error: string } {
     if (arg === "--batch") {
       const value = argv[++index];
       if (!value) return { error: "--batch 需要一个批次 ID" };
+      if (batchArgumentProvided) return { error: "批次 ID 只能指定一次" };
       batchId = value;
+      batchArgumentProvided = true;
       continue;
     }
     if (arg === "--network") {
@@ -88,11 +91,26 @@ function parseArgs(argv: string[]): ParsedArgs | { error: string } {
       continue;
     }
     if (arg.startsWith("-")) return { error: `未知参数: ${arg}` };
-    if (command) return { error: `只能指定一个命令，收到: ${arg}` };
-    if (!["doctor", "discover", "verify", "explain", "recommend", "order", "inspect", "anchor", "replay", "help"].includes(arg)) {
-      return { error: `未知命令: ${arg}` };
+    const knownCommand = ["doctor", "discover", "verify", "explain", "recommend", "order", "inspect", "anchor", "replay", "help"].includes(arg);
+    if (knownCommand) {
+      if (command) return { error: `只能指定一个命令，收到: ${arg}` };
+      command = arg as Command;
+      continue;
     }
-    command = arg as Command;
+    // Consumer Agents commonly have only a batch number available. Support
+    // both `truthpass inspect FO-2026-001` and the shortest `truthpass
+    // FO-2026-001`, while retaining the explicit --batch contract.
+    const looksLikeBatchId = /^FO-[A-Za-z0-9][A-Za-z0-9-]*$/.test(arg);
+    const queryCommands = new Set<Command>(["discover", "verify", "explain", "recommend", "order", "inspect"]);
+    if (looksLikeBatchId && !batchArgumentProvided) {
+      if (!command) command = "inspect";
+      if (!queryCommands.has(command)) return { error: `命令 ${command} 不接受位置批次 ID，请使用 --batch` };
+      batchId = arg;
+      batchArgumentProvided = true;
+      continue;
+    }
+    if (command) return { error: `只能指定一个命令，收到: ${arg}` };
+    return { error: `未知命令: ${arg}` };
   }
 
   return { command: help ? "help" : command ?? "help", json, batchId, network, dryRun, help };
@@ -415,9 +433,11 @@ export async function inspectBatch(batchId: string): Promise<Record<string, unkn
     ? verification.jevDecision as Record<string, unknown>
     : null;
   const accepted = verification.status === "accepted" || verification.status === "accepted_with_scope";
+  const task = makeTask(batchId) as Record<string, unknown>;
+  const acceptance = (task.acceptance ?? {}) as Record<string, unknown>;
   const rawPolicyHash = await sha256Hex(`${String(verification.policyId ?? "")}:${String(verification.policyVersion ?? "")}`);
   const policyHash = rawPolicyHash.startsWith("0x") ? rawPolicyHash : `0x${rawPolicyHash}`;
-  const productionTime = evidence.productionTime ?? (makeTask(batchId) as Record<string, unknown>).productionTime;
+  const productionTime = evidence.productionTime ?? task.productionTime;
   return {
     schemaVersion: "truthpass.cli.inspection.v1",
     command: "inspect",
@@ -444,6 +464,12 @@ export async function inspectBatch(batchId: string): Promise<Record<string, unkn
       totox: evidence.totox ?? null,
       logisticsGapHours: evidence.logisticsGapHours ?? null,
       coldChainGapHours: evidence.coldChainGapHours ?? null,
+      limits: {
+        epaDhaMinPercent: acceptance.minEpaDhaPercent ?? null,
+        peroxideMaxValue: acceptance.maxPeroxideValue ?? null,
+        totoxMax: acceptance.maxTotox ?? null,
+        coldChainGapMaxHours: acceptance.maxLogisticsGapHours ?? null,
+      },
     },
     evidence: {
       serviceId: verification.selectedServiceId ?? null,
@@ -544,7 +570,57 @@ export async function anchorPlan(batchId: string, network: "testnet" | "mainnet"
   };
 }
 
-function textFor(result: Record<string, unknown>): string {
+function agentTranslation(result: Record<string, unknown>): string {
+  const product = (result.product ?? {}) as Record<string, unknown>;
+  const batch = (result.batch ?? {}) as Record<string, unknown>;
+  const quality = (result.quality ?? {}) as Record<string, unknown>;
+  const limits = (quality.limits ?? {}) as Record<string, unknown>;
+  const evidence = (result.evidence ?? {}) as Record<string, unknown>;
+  const jev = (result.jev ?? {}) as Record<string, unknown>;
+  const jevDecision = (jev.decision ?? {}) as Record<string, unknown>;
+  const verification = (result.verification ?? {}) as Record<string, unknown>;
+  const chain = (result.chain ?? {}) as Record<string, unknown>;
+  const checks = (verification.checks ?? {}) as Record<string, unknown>;
+  const checkValues = Object.values(checks);
+  const passedChecks = checkValues.filter(Boolean).length;
+  const receiptMap = (chain.receipts ?? {}) as Record<string, unknown>;
+  const receiptCount = Object.values(receiptMap).filter((item) => {
+    const receipt = item as Record<string, unknown> | null;
+    return Boolean(receipt?.txHash && receipt.receiptStatus === 1);
+  }).length;
+  const missing = Array.isArray(jevDecision.missingEvidenceCodes) && jevDecision.missingEvidenceCodes.length > 0
+    ? jevDecision.missingEvidenceCodes.join("、")
+    : "无";
+  const conflicts = Array.isArray(jevDecision.conflictCodes) && jevDecision.conflictCodes.length > 0
+    ? jevDecision.conflictCodes.join("、")
+    : "无";
+  const qualityText = [
+    `EPA+DHA ${quality.epaDhaPercent ?? "未知"}%（门槛 ≥ ${limits.epaDhaMinPercent ?? "未声明"}%）`,
+    `过氧化值 ${quality.peroxideValue ?? "未知"}（门槛 ≤ ${limits.peroxideMaxValue ?? "未声明"}）`,
+    `TOTOX ${quality.totox ?? "未知"}（门槛 ≤ ${limits.totoxMax ?? "未声明"}）`,
+    `冷链中断 ${quality.coldChainGapHours ?? "未知"} 小时（门槛 ≤ ${limits.coldChainGapMaxHours ?? "未声明"} 小时）`,
+  ].join("；");
+  const liveJev = jev.liveApiEnabled === true;
+  const chainText = chain.anchored === true
+    ? `已在 ${chain.network ?? "目标链"}（Chain ID ${chain.chainId ?? "未知"}）记录，${receiptCount}/4 类业务 receipt 校验通过`
+    : `当前没有完整的可验证链上回执（${chain.availabilityReason ?? "manifest unavailable"}）`;
+  const conclusion = verification.status === "accepted"
+    ? "当前批次通过演示验收，可以向用户展示证据并在征得同意后准备下单。"
+    : "当前批次未通过验收，不应向用户推荐或继续下单。";
+  return [
+    `【真验 Agent 转译】${product.name ?? "鱼油产品"}，批次 ${batch.id ?? batch.batchId ?? "未知"}。`,
+    `生产时间：${batch.productionTime ?? "未知"}；检测服务：${evidence.serviceName ?? evidence.serviceId ?? "未知"}。`,
+    `检测结果：${qualityText}。`,
+    `证据：报告批次 ${evidence.reportBatchId ?? "未知"}，证据哈希 ${evidence.hash ?? evidence.evidenceHash ?? "无"}。`,
+    `JEV：${liveJev ? "已调用 live JEV" : "当前为 deterministic fallback，未调用 live JEV"}；路由 ${jev.route ?? "未知"}；置信度 ${jevDecision.confidence ?? "未知"}；缺失证据 ${missing}；冲突 ${conflicts}。`,
+    `确定性 Verifier：${verification.verifierVersion ?? "未知"}，${passedChecks}/${checkValues.length || 0} 项检查通过，状态 ${verification.status ?? result.status ?? "未知"}。`,
+    `区块链确权：${chainText}；合约 ${chain.contractAddress ?? "未知"}。`,
+    conclusion,
+    "边界说明：区块链确认的是证据哈希、验收结论和回执事件的一致性；它不会自动把链下原始报告变成真实。当前数据标记为 demo/synthetic，仅用于演示。",
+  ].join("\n");
+}
+
+export function textFor(result: Record<string, unknown>): string {
   if (result.command === "doctor") return `真验 CLI ${result.version}\nfixture: ${result.fixtureMode}\nJEV: ${((result.jev as Record<string, unknown>).mode)}\n链上: ${((result.chain as Record<string, unknown>).status)}\n`;
   if (result.command === "discover") return `批次 ${result.batchId} 的候选服务：\n${(result.services as Array<Record<string, unknown>>).map((item) => `- ${item.id} ${item.name} (${item.kind})`).join("\n")}\n`;
   if (result.command === "anchor") return `锚定计划已生成：${result.status}\n批次：${result.batchId}\n网络：${result.network}\nrequestId：${result.requestId}\n不会发送交易。\n`;
@@ -553,13 +629,14 @@ function textFor(result: Record<string, unknown>): string {
     const ledger = result.ledger as Record<string, unknown>;
     return `本地回放：${result.status}\n批次：${result.batchId}\n阶段：验证 ${stages.verification}，锚定 ${stages.evidenceAnchor}，购买 ${stages.purchase}，贡献 ${stages.contribution}，争议 ${stages.dispute}，替代 ${stages.supersede}\n账本：${ledger.valid ? "有效" : "无效"}（${ledger.eventCount} 个事件）\n不会发送交易。\n`;
   }
-  if (result.command === "explain") return `批次 ${result.batchId}：${result.status}\n选择服务：${result.selectedServiceId ?? "无"}\n评分：${result.score}\n${(result.reasons as string[]).join("；") || "当前演示规则未发现冲突。"}\n`;
+  if (result.command === "explain") return String(result.explanation ?? agentTranslation(result));
   if (result.command === "recommend") return `批次 ${result.batchId}：${result.recommendation}\n${result.reason}\n下一步：${result.consumerNextAction}\n`;
   if (result.command === "order") return `批次 ${result.batchId}：${result.orderStatus}\n${result.reason}\n`;
   if (result.command === "inspect") {
     const chain = result.chain as Record<string, unknown>;
     const verification = result.verification as Record<string, unknown>;
-    return `批次 ${result.batchId}：${verification.status}\n链上：${chain.lifecycle}（${chain.network ?? "unavailable"}）\n证据哈希：${(result.evidence as Record<string, unknown>).evidenceHash ?? "无"}\n`;
+    const batch = result.batch as Record<string, unknown>;
+    return `批次 ${batch.id ?? batch.batchId ?? "未知"}：${verification.status}\n链上：${chain.lifecycle}（${chain.network ?? "unavailable"}）\n证据哈希：${(result.evidence as Record<string, unknown>).evidenceHash ?? "无"}\n`;
   }
   return `批次 ${result.batchId}：${result.status}\n选择服务：${result.selectedServiceId ?? "无"}\n评分：${result.score}\n`;
 }
@@ -586,9 +663,16 @@ export async function runCli(argv: string[]): Promise<CliResult> {
       result = await orderPlan(parsed.batchId);
     } else if (parsed.command === "inspect") {
       result = await inspectBatch(parsed.batchId);
+    } else if (parsed.command === "explain") {
+      const inspection = await inspectBatch(parsed.batchId);
+      result = {
+        ...inspection,
+        schemaVersion: "truthpass.cli.explanation.v1",
+        command: "explain",
+        explanation: agentTranslation(inspection),
+      };
     } else {
       result = await evaluateBatch(parsed.batchId);
-      if (parsed.command === "explain") result = { ...result, command: "explain", explanation: textFor(result) };
     }
     const exitCode = result.status === "rejected" ? 10 : result.status === "failed" ? 60 : 0;
     return { exitCode, value: result };

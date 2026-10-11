@@ -1,9 +1,9 @@
 # 真验 CLI 合同
 
-> 文档版本：v0.9.1
+> 文档版本：v0.9.2
 > 状态：当前生效
 > 最近修改：2026-10-08
-> 修改摘要：补充面向消费者 Agent 的 `inspect` 综合查询合同，并对齐主网回执 manifest。
+> 修改摘要：增加批次编号直查和中文 Agent 转译，明确 JEV 降级原因与确定性验收边界。
 > 影响范围：CLI、消费者 Agent、主网回执、网页观察台、自动化测试
 > 队友下一步：将 `demo/synthetic` 批次替换为带来源签名的现实 EvidenceEnvelope。
 
@@ -33,6 +33,15 @@ truthpass inspect --batch FO-2026-001 --json
 truthpass recommend --batch FO-2026-001 --json
 truthpass order --batch FO-2026-001 --json
 ```
+
+如果 Agent 只有一个批次编号，也可以直接调用：
+
+```text
+truthpass FO-2026-001 --json
+truthpass explain FO-2026-001
+```
+
+其中 `explain` 会把结构化结果转译为中文说明。它会明确区分：JEV 负责证据范围、缺失项和路由；确定性 Verifier 负责阈值验收；区块链负责证据哈希、验收结论和回执事件的可复核记录。JEV 未配置、超时、返回不合规或校验失败时，系统会显示 `deterministic_fallback`，不会把降级结果描述成已调用 live 模型。
 
 `inspect` 是只读总览接口。它把 `verify` 的确定性结论和公开主网 manifest 合并成一个机器可读对象，便于 Agent 在一次调用中回答“这是什么、为什么可信、哪些信息已经上链、下一步能做什么”。它不会读取私钥，也不会发起链上写入。
 

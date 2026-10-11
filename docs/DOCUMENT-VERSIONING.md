@@ -65,6 +65,7 @@ docs(v0.4.1): clarify evidence envelope fields
 | v0.9.1 | 历史交付版本 | 新增 `inspect` 综合查询，聚合确定性验收、JEV 路由和主网回执，提供 Agent 调用示例 |
 | v0.9.2 | 当前交付版本 | 支持批次编号直查、中文 Agent 转译和 JEV 降级边界说明 |
 | v1.0.0 | 当前架构版本 | 企业生产接入、传感器/服务器取证、第三方认证、钱包角色和 BOT Chain 上链协议 |
+| v1.0.1 | 当前实现交接版本 | 浏览器钱包连接、五类主网 calldata、RPC 故障下的元数据准备和 receipt 回读边界 |
 
 ## 变更日志
 
@@ -213,3 +214,12 @@ docs(v0.4.1): clarify evidence envelope fields
 - **转译内容**：增加鱼油指标、演示阈值、JEV 路由/降级状态、确定性 Verifier 检查计数和主网 receipt 摘要；
 - **安全口径**：JEV 的 fallback 不被描述为 live 模型，区块链确权边界明确为哈希/结论/回执记录，不替代链下原始数据真实性；
 - **测试**：新增批次直查、中文转译和 inspect 文本输出测试。
+
+### v1.0.1 — 2026-10-11
+
+- **新增文档**：`docs/wallet-interaction-v1.0.1.md`；
+- **新增代码能力**：网页钱包连接、MetaMask/OKX/Binance 的 EIP-1193 入口，以及 `evidence`、`verification`、`purchase`、`contribution`、`dispute` 五类主网交易准备；
+- **主网边界**：`/api/wallet/prepare` 使用已验证部署清单生成 calldata，不再把 RPC 健康状态当成交易准备前置条件；钱包仍必须确认 Chain ID `677`、签名、广播并回读 receipt/事件；
+- **可靠性**：网页 BFF 的主网健康读取设置有限超时，RPC 不可达时返回明确的不可达状态，不阻断链下查询和交易准备；manifest 支持 `TRUTHPASS_PUBLIC_URL` 和反向代理头，远程 Agent 不会收到 `localhost` 地址；
+- **验证**：`npm run typecheck` 通过，`npm test` 43/43 通过，本机 POST `/api/wallet/prepare` 返回真实主网合约 calldata；
+- **状态边界**：当前数据仍为 `demo/synthetic`，真实产线、角色隔离和生产签名服务仍由队友后续实现。

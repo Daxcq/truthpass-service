@@ -21,6 +21,7 @@
         </nav>
         <div class="top-actions">
           <span class="demo-chip"><span class="pulse"></span><span data-runtime-status>MAINNET / PENDING</span></span>
+          <button class="ghost-button" id="connect-wallet" type="button">连接钱包</button>
           <button class="ghost-button" id="open-observer" type="button">评委观察台</button>
         </div>
       </header>
@@ -148,11 +149,23 @@
       <div class="observer-row"><span>JEV 决策门</span><strong>结构化路由 · 服务端返回</strong></div>
       <div class="observer-row"><span>证据根哈希</span><strong data-evidence-hash>等待验证</strong></div>
       <div class="observer-row"><span>链上状态</span><strong class="amber-text" data-chain-status>读取主网状态…</strong></div>
+      <div class="wallet-panel">
+        <div class="observer-row"><span>当前钱包</span><strong id="wallet-status">未连接</strong></div>
+        <div class="wallet-actions">
+          <button class="ghost-button" id="wallet-connect-drawer" type="button">连接 EVM 钱包</button>
+          <button class="ghost-button" id="wallet-anchor" type="button" disabled>提交检测证据</button>
+          <button class="ghost-button" id="wallet-purchase" type="button" disabled>确认购买</button>
+          <button class="ghost-button" id="wallet-dispute" type="button" disabled>提出质疑</button>
+          <button class="ghost-button" id="wallet-contribution" type="button" disabled>提交反馈</button>
+        </div>
+        <div class="wallet-tx" id="wallet-tx" hidden></div>
+      </div>
       <div class="service-table"><div class="table-head"><span>服务</span><span>历史</span><span>当前</span><span>本次</span></div><div><span>lab-a</span><span>92</span><span class="amber-text">降级</span><span class="red-text">拒绝</span></div><div><span>lab-b</span><span>96</span><span class="red-text">离线</span><span>未调用</span></div><div><span>lab-c</span><span>88</span><span class="green-text">在线</span><span class="green-text">通过</span></div></div>
       <div class="drawer-boundary"><span>边界提醒</span><p>链上确认提交过的记录没有被悄悄改写；设备、实验室和生产方的现实真实性仍需要多源、复检和争议机制共同维护。</p></div>
     </aside>
     <div class="drawer-scrim" id="drawer-scrim"></div>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="./wallet.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>
