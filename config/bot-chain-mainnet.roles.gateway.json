@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "truthpass.mainnet.gateway-roles.v1",
+  "status": "roles_receipt_verified",
+  "network": "bot-mainnet",
+  "chainId": 677,
+  "anchorAddress": "0x0033462bee153cb9DF12b5c447b9C282DbfbE877",
+  "gatewayAddress": "0x5192484B107E51EADFda4DBF4c9fFa41C03453F1",
+  "receipts": [
+    {"name":"PURCHASE_WRITER_ROLE","txHash":"0x0487a01587f85c82daaee8c341424b8fd6785430d31e2e15911b04d69c2f120b","status":"verified"},
+    {"name":"CONTRIBUTION_WRITER_ROLE","txHash":"0x829cf002cd16e2dac755b36de11534c1f89a29f55e116a42c30f65bdd7edfa52","status":"verified"},
+    {"name":"DISPUTE_ROLE","txHash":"0x4b6220d63796b4ec1111010f781fe86afdbafb54e62f4eb1505ff0255622e9cb","status":"verified"}
+  ],
+  "note":"Gateway receives consumer roles; private keys stay outside Git."
+}

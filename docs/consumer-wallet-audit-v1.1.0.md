@@ -1,10 +1,6 @@
 # 真验 v1.1.0：消费者钱包与 Agent 审计质押闭环
 
-> 文档版本：v1.1.0  
-> 最近修改：2026-10-12  
-> 修改摘要：增加消费者无特权钱包路径、Consumer Gateway、事件级 receipt 校验、Agent 审计质押合约和主网验收脚本。  
-> 当前状态：代码与本地验收完成；Gateway 和 Audit Escrow 主网部署需要真实 RPC、Gas 和角色回读。  
-> 队友下一步：完成主网部署、授予 Gateway/审计角色，并用普通评委钱包完成真实交易。
+> 文档版本：v1.1.1\r\n> 最近修改：2026-10-12\r\n> 修改摘要：增加消费者无特权钱包路径、Consumer Gateway、事件级 receipt 校验、Agent 审计质押合约、主网部署地址和角色回执。\r\n> 当前状态：Gateway、Audit Escrow 已部署到 BOT Chain Mainnet；待用非部署钱包完成现场购买、反馈和质疑交易。\r\n> 队友下一步：接入地址配置，启动 C 端页面，完成普通钱包现场验收并替换演示单钱包角色。
 
 ## 1. 主办方验收对应关系
 
@@ -91,7 +87,24 @@ Agent 不能直接结算资金。每次结算必须先有 Agent 证据和独立 
 
 ## 6. 主网部署
 
-先准备本地环境变量：
+当前主网地址：
+
+```text
+Consumer Gateway: 0x5192484B107E51EADFda4DBF4c9fFa41C03453F1
+Audit Escrow:    0x722a4291C64B5BD3ED374AD457Ba6326681C2933
+Chain ID:        677
+```
+
+部署交易和角色授权回执见：
+
+```text
+config/bot-chain-mainnet.gateway.json
+config/bot-chain-mainnet.audit-escrow.json
+config/bot-chain-mainnet.roles.gateway.json
+config/bot-chain-mainnet.roles.audit-escrow.json
+```
+
+新环境只需要准备本地环境变量（私钥不得进入仓库）：
 
 ```powershell
 $env:TRUTHPASS_CONTRACT_ADDRESS="0x0033462bee153cb9DF12b5c447b9C282DbfbE877"
@@ -106,7 +119,7 @@ npm run deploy:consumer-gateway-mainnet -- --dry-run
 npm run deploy:audit-escrow-mainnet -- --dry-run
 ```
 
-确认主网部署后：
+历史部署已完成；重新部署只在合约升级时执行：
 
 ```powershell
 npm run deploy:consumer-gateway-mainnet -- --confirm

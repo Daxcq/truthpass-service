@@ -1,9 +1,6 @@
 # 真验 v1.1.0：主网部署状态交接
 
-> 文档版本：v1.1.0  
-> 最近修改：2026-10-12  
-> 修改摘要：记录 Consumer Gateway 和 Audit Escrow 的真实部署预检结果、当前阻塞和恢复后的执行顺序。  
-> 当前状态：代码已推送；主网部署尚未提交交易。
+> 文档版本：v1.1.1\r\n> 最近修改：2026-10-12\r\n> 修改摘要：记录 Consumer Gateway、Audit Escrow 的真实主网部署、角色授权回执和本机代理配置。\r\n> 当前状态：合约已部署并完成角色回读；普通评委钱包现场交易仍待执行。
 
 ## 已完成
 
@@ -15,7 +12,27 @@
 - 49 项测试通过；
 - 分支已推送至 `codex/botchain-mainnet-deployment`。
 
-## 预检结果
+## 已完成的主网部署
+
+| 组件 | 地址 | 部署交易 | 区块 |
+|---|---|---|---:|
+| Evidence Anchor | `0x0033462bee153cb9DF12b5c447b9C282DbfbE877` | 既有部署 | — |
+| Consumer Gateway | `0x5192484B107E51EADFda4DBF4c9fFa41C03453F1` | [`0x9585…81180`](https://scan.botchain.ai/tx/0x9585f9cb8766b539f6289be7db8fa4a4f980535f9818c81423e24f3bd2281180) | 26438022 |
+| Audit Escrow | `0x722a4291C64B5BD3ED374AD457Ba6326681C2933` | [`0xc9f0…a5b2c`](https://scan.botchain.ai/tx/0xc9f08364e8adbd0e2d5c30ce0a8e9f4f427792650eb5f845f0f83df84f1a5b2c) | 26438083 |
+
+地址配置分别保存在 `config/bot-chain-mainnet.gateway.json` 和 `config/bot-chain-mainnet.audit-escrow.json`。
+
+本机若需要通过 Clash/Mihomo 访问 RPC，必须在启动 Node 前设置代理，例如：
+
+```powershell
+$env:NODE_USE_ENV_PROXY="1"
+$env:HTTPS_PROXY="http://127.0.0.1:7897"
+$env:HTTP_PROXY="http://127.0.0.1:7897"
+```
+
+Gateway 的 `PURCHASE_WRITER_ROLE`、`CONTRIBUTION_WRITER_ROLE`、`DISPUTE_ROLE` 已在 Anchor 上授权并回读；Audit Escrow 的 `DISPUTE_ROLE` 也已授权，使其可以把挑战同步到 Anchor。Escrow 自身的 `AUDIT_AGENT_ROLE`、`VERIFIER_ROLE`、`ARBITER_ROLE`、`TREASURY_ROLE` 已授予当前部署钱包并回读，属于黑客松演示的单钱包配置，生产环境应拆分为独立受控地址。
+
+## 之前的预检结果
 
 实际执行：
 
@@ -30,22 +47,16 @@ npm run deploy:audit-escrow-mainnet -- --dry-run
 request timeout (code=TIMEOUT, version=6.17.0)
 ```
 
-这表示 BOT Chain RPC 当前不可达，预检没有拿到网络、Gas 或余额信息，也没有广播交易。
+当时表示 BOT Chain RPC 当前不可达，预检没有拿到网络、Gas 或余额信息，也没有广播交易。随后通过本机显式 HTTPS 代理恢复访问并完成部署。
 
-## 恢复网络后的顺序
+## 仍待完成的现场验收
 
-1. 先确认 `https://rpc.botchain.ai` 返回 Chain ID `677`；
-2. 执行两个 `--dry-run`，核对 Gas 和余额；
-3. 设置主网部署确认变量；
-4. 部署 Consumer Gateway；
-5. 部署 Audit Escrow；
-6. 回读部署地址代码和构造参数；
-7. 给 Gateway 授予 `PURCHASE_WRITER_ROLE`、`CONTRIBUTION_WRITER_ROLE`、`DISPUTE_ROLE`；
-8. 给 Escrow 授予 `AUDIT_AGENT_ROLE`、`VERIFIER_ROLE`、`ARBITER_ROLE`、`TREASURY_ROLE`；
-9. 回读每个 `hasRole`；
-10. 写入本地受控配置，不提交私钥；
-11. 使用普通评委钱包完成一次购买交易；
-12. 保存真实 receipt、事件和 Explorer 链接。
+1. 启动 BFF 和 C 端页面；
+2. 使用非部署钱包 Connect Wallet 并切换 Chain ID `677`；
+3. 完成一次 `purchase`，回读 `ConsumerPurchaseSubmitted + PurchaseRecorded`；
+4. 完成一次 `contribution` 和 `dispute`，回读对应 Gateway/Anchor 事件；
+5. 将普通用户交易 Hash 写入本文件和现场交付说明；
+6. 将生产环境 Agent、Verifier、Arbiter 钱包从当前单钱包配置中拆分。
 
 ## 成功标准
 

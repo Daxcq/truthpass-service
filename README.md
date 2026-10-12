@@ -130,9 +130,9 @@ assets/fish-oil-consumer-cli-journey.png 消费者 CLI 证据故事方向图
 - 交付验收：`verifyExecution`；
 - 履约记录：`FeedbackRecord`；
 - 消费者参与：`ConsumerParticipationRegistry`；
-- 链上锚定：`TruthPassEvidenceAnchor.sol` 和 `src/chain.ts`；BOT Chain 主网部署与四类业务 receipt 见 [`config/bot-chain-mainnet.deployed.json`](config/bot-chain-mainnet.deployed.json) 和 [`config/bot-chain-mainnet.replay.json`](config/bot-chain-mainnet.replay.json)；
+- 链上锚定：`TruthPassEvidenceAnchor.sol` 和 `src/chain.ts`；BOT Chain 主网部署与业务 receipt 见 [`config/bot-chain-mainnet.deployed.json`](config/bot-chain-mainnet.deployed.json)、[`config/bot-chain-mainnet.gateway.json`](config/bot-chain-mainnet.gateway.json) 和 [`config/bot-chain-mainnet.audit-escrow.json`](config/bot-chain-mainnet.audit-escrow.json)；
 - 抗刷分基础：反馈绑定购买记录、任务哈希、服务身份和证据哈希。
 
-ERC-8004 作为身份、信誉和验证模型的参考；当前仓库已在 BOT Chain 主网完成合约部署、角色回读和 `evidence → verification → purchase → contribution` 四类业务 receipt 回放。当前回放仍是 `demo/synthetic`，生产上线仍需把演示钱包角色拆分，并接入真实产线、实验室和设备签名。
+ERC-8004 作为身份、信誉和验证模型的参考；当前仓库已在 BOT Chain 主网完成 Anchor、Consumer Gateway、Audit Escrow 部署和角色回读，并保留 `evidence → verification → purchase → contribution` 的 `demo/synthetic` 业务回放。仍待用非部署钱包完成现场 `purchase → contribution → dispute` 交易，并接入真实产线、实验室和设备签名。
 
 JEV 只用于结构化判别、缺口识别和服务路由；最终通过/拒绝仍由确定性 `Verifier` 决定。接入边界、失败关闭和回放要求见 [docs/jev-integration-v0.5.md](docs/jev-integration-v0.5.md)。

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "truthpass.mainnet.roles.v0.8.5",
+  "status": "roles_receipt_verified",
+  "network": "bot-mainnet",
+  "chainId": 677,
+  "contractAddress": "0x0033462bee153cb9DF12b5c447b9C282DbfbE877",
+  "deployerAddress": "0x2eBd8467735EE3534be6add92f3D7231BA693c08",
+  "singleWalletMode": false,
+  "receipts": [
+    {
+      "name": "DISPUTE_ROLE",
+      "target": "0x722a4291C64B5BD3ED374AD457Ba6326681C2933",
+      "txHash": "0x583c6acfb81c67f4d3dd3734694bb05d231d5ba562cafa73f6d8810e25862e40",
+      "status": "verified"
+    }
+  ],
+  "note": "Public role metadata only. Private keys stay outside Git."
+}

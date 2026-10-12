@@ -18,6 +18,7 @@
     "deploy:bot-chain-mainnet": "node --env-file-if-exists=.env.local scripts/deploy-bot-chain-mainnet.mjs",
     "deploy:consumer-gateway-mainnet": "node --env-file-if-exists=.env.local scripts/deploy-consumer-gateway-mainnet.mjs",
     "deploy:audit-escrow-mainnet": "node --env-file-if-exists=.env.local scripts/deploy-audit-escrow-mainnet.mjs",
+    "grant:audit-escrow-mainnet-roles": "node --env-file-if-exists=.env.local scripts/grant-audit-escrow-mainnet-roles.mjs",
     "grant:bot-chain-mainnet-roles": "node --env-file-if-exists=.env.local scripts/grant-bot-chain-mainnet-roles.mjs",
     "replay:bot-chain-mainnet": "node --env-file-if-exists=.env.local scripts/replay-bot-chain-mainnet.mjs",
     "protocol:server": "tsx src/protocol-server.ts",

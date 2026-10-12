@@ -5,6 +5,7 @@ import path from "node:path";
 import process from "node:process";
 import solc from "solc";
 import { ContractFactory, JsonRpcProvider, Wallet, getAddress, parseEther } from "ethers";
+import { configureEthersNetwork } from "./ethers-network.mjs";
 
 const ROOT = process.cwd();
 const RPC = process.env.TRUTHPASS_MAINNET_RPC_URL || "https://rpc.botchain.ai";
@@ -27,6 +28,7 @@ async function compile() {
 }
 
 async function main() {
+  configureEthersNetwork();
   const dryRun = process.argv.includes("--dry-run");
   const confirmed = process.argv.includes("--confirm") && process.env.TRUTHPASS_ESCROW_DEPLOY_CONFIRM === CONFIRM;
   if (!dryRun && !confirmed) fail(`live deployment requires --confirm and TRUTHPASS_ESCROW_DEPLOY_CONFIRM=${CONFIRM}`);

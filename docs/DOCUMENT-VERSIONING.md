@@ -65,7 +65,9 @@ docs(v0.4.1): clarify evidence envelope fields
 | v0.9.1 | 历史交付版本 | 新增 `inspect` 综合查询，聚合确定性验收、JEV 路由和主网回执，提供 Agent 调用示例 |
 | v0.9.2 | 当前交付版本 | 支持批次编号直查、中文 Agent 转译和 JEV 降级边界说明 |
 | v1.0.0 | 当前架构版本 | 企业生产接入、传感器/服务器取证、第三方认证、钱包角色和 BOT Chain 上链协议 |
-| v1.0.1 | 当前实现交接版本 | 浏览器钱包连接、五类主网 calldata、RPC 故障下的元数据准备和 receipt 回读边界 |
+| v1.0.1 | 历史实现交接版本 | 浏览器钱包连接、五类主网 calldata、RPC 故障下的元数据准备和 receipt 回读边界 |
+| v1.1.0 | 当前功能版本 | Consumer Gateway、Audit Escrow、消费者钱包路径和 Agent 审计质押接口 |
+| v1.1.1 | 当前主网部署版本 | Gateway/Escrow 主网部署、Anchor 角色授权回执、本机代理适配和现场验收待办 |
 
 ## 变更日志
 

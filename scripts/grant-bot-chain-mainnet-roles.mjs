@@ -20,6 +20,7 @@ import {
   keccak256,
   toUtf8Bytes,
 } from "ethers";
+import { configureEthersNetwork } from "./ethers-network.mjs";
 
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const RPC_URL = process.env.TRUTHPASS_MAINNET_RPC_URL || "https://rpc.botchain.ai";
@@ -78,6 +79,7 @@ function parseArgs(argv) {
 }
 
 async function main() {
+  configureEthersNetwork();
   const args = parseArgs(process.argv.slice(2));
   if (args.help) {
     console.log(usage());

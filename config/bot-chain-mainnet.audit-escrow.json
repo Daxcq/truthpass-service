@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "truthpass.audit-escrow-deployment.v1",
+  "network": "bot-mainnet",
+  "chainId": 677,
+  "anchorAddress": "0x0033462bee153cb9DF12b5c447b9C282DbfbE877",
+  "treasuryAddress": "0x2eBd8467735EE3534be6add92f3D7231BA693c08",
+  "minimumStakeWei": "1000000000000000",
+  "deployerAddress": "0x2eBd8467735EE3534be6add92f3D7231BA693c08",
+  "rpcUrl": "https://rpc.botchain.ai",
+  "explorerUrl": "https://scan.botchain.ai",
+  "estimatedGas": "1429972",
+  "status": "deployed_receipt_verified",
+  "auditEscrow": {
+    "address": "0x722a4291C64B5BD3ED374AD457Ba6326681C2933",
+    "deploymentTxHash": "0xc9f08364e8adbd0e2d5c30ce0a8e9f4f427792650eb5f845f0f83df84f1a5b2c",
+    "deploymentBlockNumber": 26438083,
+    "explorerUrl": "https://scan.botchain.ai/address/0x722a4291C64B5BD3ED374AD457Ba6326681C2933"
+  }
+}
