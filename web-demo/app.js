@@ -102,7 +102,11 @@ async function executeWalletAction(action) {
   const prepared = await response.json();
   if (!response.ok) throw new Error(prepared.message ?? `钱包交易准备失败 HTTP ${response.status}`);
   toast(`${action} 已准备，等待钱包确认 ${prepared.requiredRole}`);
-  const result = await window.TruthPassWallet.sendPreparedTransaction(prepared.transaction);
+  const result = await window.TruthPassWallet.sendPreparedTransaction(prepared.transaction, {
+    action,
+    target: prepared.contractAddress,
+    anchorAddress: prepared.anchorAddress,
+  });
   state.lastWalletTx = result;
   if (action === "purchase") state.purchaseId = prepared.ids.purchaseId;
   state.wallet = await window.TruthPassWallet.state();

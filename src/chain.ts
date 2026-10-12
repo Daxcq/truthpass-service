@@ -113,7 +113,35 @@ export interface TruthPassWriteTransaction extends EvidenceAnchorTransaction {
     | "recordPurchase"
     | "recordContribution"
     | "raiseDispute"
+    | "consumerPurchase"
+    | "consumerContribution"
+    | "consumerDispute"
     | "revokeOrSupersede";
+}
+
+export interface ConsumerGatewayPurchaseInput {
+  purchaseId: string;
+  batchCommitment: string;
+  purchaseProofHash: string;
+  consentHash: string;
+  gatewayAddress: string;
+}
+
+export interface ConsumerGatewayContributionInput {
+  contributionId: string;
+  purchaseId: string;
+  evidenceHash: string;
+  contributionHash: string;
+  score: number;
+  gatewayAddress: string;
+}
+
+export interface ConsumerGatewayDisputeInput {
+  disputeId: string;
+  targetKind: TruthPassTargetKind;
+  targetId: string;
+  reasonHash: string;
+  gatewayAddress: string;
 }
 
 export interface TruthPassWriteSubmission {
@@ -263,6 +291,12 @@ export const RAISE_DISPUTE_SIGNATURE =
   "raiseDispute(bytes32,uint8,bytes32,bytes32,uint256,bytes32)";
 export const REVOKE_OR_SUPERSEDE_SIGNATURE =
   "revokeOrSupersede(uint8,bytes32,bytes32,bytes32,uint256,bytes32)";
+export const CONSUMER_GATEWAY_PURCHASE_SIGNATURE =
+  "recordPurchase(bytes32,bytes32,bytes32,bytes32)";
+export const CONSUMER_GATEWAY_CONTRIBUTION_SIGNATURE =
+  "recordContribution(bytes32,bytes32,bytes32,bytes32,uint8)";
+export const CONSUMER_GATEWAY_DISPUTE_SIGNATURE =
+  "raiseDispute(bytes32,uint8,bytes32,bytes32)";
 export const EVIDENCE_ANCHORED_SIGNATURE =
   "EvidenceAnchored(bytes32,bytes32,bytes32,bytes32,bytes32,uint8,address)";
 export const VERIFICATION_RECORDED_SIGNATURE =
@@ -512,6 +546,70 @@ export function buildRaiseDisputeTransaction(
     action: "raiseDispute",
     to: addressFor(input.contractAddress, config),
     data: encodeRaiseDisputeCalldata(input, config.chainId),
+    value: "0x0",
+    chainId: config.chainId,
+    chainIdHex: config.chainIdHex,
+  };
+}
+
+export function buildConsumerGatewayPurchaseTransaction(
+  input: ConsumerGatewayPurchaseInput,
+  config: BotChainConfig,
+): TruthPassWriteTransaction {
+  return {
+    action: "consumerPurchase",
+    to: asAddress(input.gatewayAddress, "gatewayAddress"),
+    data: truthPassCalldata(CONSUMER_GATEWAY_PURCHASE_SELECTOR, [
+      asBytes32(input.purchaseId, "purchaseId").slice(2),
+      asBytes32(input.batchCommitment, "batchCommitment").slice(2),
+      asBytes32(input.purchaseProofHash, "purchaseProofHash").slice(2),
+      asBytes32(input.consentHash, "consentHash").slice(2),
+    ]),
+    value: "0x0",
+    chainId: config.chainId,
+    chainIdHex: config.chainIdHex,
+  };
+}
+
+export function buildConsumerGatewayContributionTransaction(
+  input: ConsumerGatewayContributionInput,
+  config: BotChainConfig,
+): TruthPassWriteTransaction {
+  if (!Number.isInteger(input.score) || input.score < 0 || input.score > 100) {
+    throw new BotChainError("score must be an integer between 0 and 100");
+  }
+  return {
+    action: "consumerContribution",
+    to: asAddress(input.gatewayAddress, "gatewayAddress"),
+    data: truthPassCalldata(CONSUMER_GATEWAY_CONTRIBUTION_SELECTOR, [
+      asBytes32(input.contributionId, "contributionId").slice(2),
+      asBytes32(input.purchaseId, "purchaseId").slice(2),
+      asBytes32(input.evidenceHash, "evidenceHash").slice(2),
+      asBytes32(input.contributionHash, "contributionHash").slice(2),
+      uint8Word(input.score, "score"),
+    ]),
+    value: "0x0",
+    chainId: config.chainId,
+    chainIdHex: config.chainIdHex,
+  };
+}
+
+export function buildConsumerGatewayDisputeTransaction(
+  input: ConsumerGatewayDisputeInput,
+  config: BotChainConfig,
+): TruthPassWriteTransaction {
+  if (!Number.isInteger(input.targetKind) || input.targetKind < 1 || input.targetKind > 4) {
+    throw new BotChainError("targetKind must be one of 1..4");
+  }
+  return {
+    action: "consumerDispute",
+    to: asAddress(input.gatewayAddress, "gatewayAddress"),
+    data: truthPassCalldata(CONSUMER_GATEWAY_DISPUTE_SELECTOR, [
+      asBytes32(input.disputeId, "disputeId").slice(2),
+      uint8Word(input.targetKind, "targetKind"),
+      asBytes32(input.targetId, "targetId").slice(2),
+      asBytes32(input.reasonHash, "reasonHash").slice(2),
+    ]),
     value: "0x0",
     chainId: config.chainId,
     chainIdHex: config.chainIdHex,
@@ -989,6 +1087,12 @@ export const RECORD_CONTRIBUTION_SELECTOR =
 export const RAISE_DISPUTE_SELECTOR = `0x${keccak256Hex(RAISE_DISPUTE_SIGNATURE).slice(0, 8)}`;
 export const REVOKE_OR_SUPERSEDE_SELECTOR =
   `0x${keccak256Hex(REVOKE_OR_SUPERSEDE_SIGNATURE).slice(0, 8)}`;
+export const CONSUMER_GATEWAY_PURCHASE_SELECTOR =
+  `0x${keccak256Hex(CONSUMER_GATEWAY_PURCHASE_SIGNATURE).slice(0, 8)}`;
+export const CONSUMER_GATEWAY_CONTRIBUTION_SELECTOR =
+  `0x${keccak256Hex(CONSUMER_GATEWAY_CONTRIBUTION_SIGNATURE).slice(0, 8)}`;
+export const CONSUMER_GATEWAY_DISPUTE_SELECTOR =
+  `0x${keccak256Hex(CONSUMER_GATEWAY_DISPUTE_SIGNATURE).slice(0, 8)}`;
 export const EVIDENCE_ANCHORED_TOPIC = `0x${keccak256Hex(EVIDENCE_ANCHORED_SIGNATURE)}`;
 export const VERIFICATION_RECORDED_TOPIC = `0x${keccak256Hex(VERIFICATION_RECORDED_SIGNATURE)}`;
 export const PURCHASE_RECORDED_TOPIC = `0x${keccak256Hex(PURCHASE_RECORDED_SIGNATURE)}`;

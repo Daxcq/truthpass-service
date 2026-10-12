@@ -7,6 +7,9 @@ import { anchorPlan, evaluateBatch, inspectBatch } from "./cli.js";
 import {
   BotChainClient,
   buildEvidenceAnchorTransaction,
+  buildConsumerGatewayContributionTransaction,
+  buildConsumerGatewayDisputeTransaction,
+  buildConsumerGatewayPurchaseTransaction,
   buildRaiseDisputeTransaction,
   buildRecordContributionTransaction,
   buildRecordPurchaseTransaction,
@@ -20,6 +23,7 @@ import { loadLocalEnv } from "./jev/http-provider.js";
 const PROJECT_ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const WEB_ROOT = join(PROJECT_ROOT, "web-demo");
 const DEPLOYMENT_FILE = join(PROJECT_ROOT, "config", "bot-chain-mainnet.deployed.json");
+const GATEWAY_FILE = join(PROJECT_ROOT, "config", "bot-chain-mainnet.gateway.json");
 const REPLAY_FILE = join(PROJECT_ROOT, "config", "bot-chain-mainnet.replay.json");
 const DEFAULT_PORT = 4173;
 const BATCH_ID = "FO-2026-001";
@@ -30,6 +34,7 @@ type PublicDeployment = {
   chainId?: number;
   explorerUrl?: string;
   contract?: { address?: string; deploymentTxHash?: string; domainSeparator?: string };
+  consumerGateway?: { address?: string; deploymentTxHash?: string; explorerUrl?: string; status?: string };
 };
 
 type PublicReplayManifest = {
@@ -86,7 +91,15 @@ async function readJson(request: IncomingMessage): Promise<Record<string, unknow
 
 async function loadDeployment(): Promise<PublicDeployment> {
   try {
-    return JSON.parse(await readFile(DEPLOYMENT_FILE, "utf8")) as PublicDeployment;
+    const deployment = JSON.parse(await readFile(DEPLOYMENT_FILE, "utf8")) as PublicDeployment;
+    try {
+      const gateway = JSON.parse(await readFile(GATEWAY_FILE, "utf8")) as { consumerGateway?: PublicDeployment["consumerGateway"] };
+      if (gateway.consumerGateway?.address) deployment.consumerGateway = gateway.consumerGateway;
+      else if (gateway.consumerGateway) deployment.consumerGateway = gateway.consumerGateway;
+    } catch {
+      // Gateway metadata is optional until the consumer gateway is deployed.
+    }
+    return deployment;
   } catch {
     return {};
   }
@@ -109,16 +122,19 @@ export async function getMainnetStatus(): Promise<Record<string, unknown>> {
   const deployment = await loadDeployment();
   const replay = await loadReplayManifest();
   const contractAddress = process.env.TRUTHPASS_CONTRACT_ADDRESS ?? deployment.contract?.address;
+  const consumerGatewayAddress = process.env.TRUTHPASS_CONSUMER_GATEWAY_ADDRESS ?? deployment.consumerGateway?.address ?? null;
   const replayVerified = replay?.status === "mainnet_receipts_verified" && replay?.batchId === BATCH_ID && replay?.network === "bot-mainnet" && replay?.chainId === 677;
   const result: Record<string, unknown> = {
     network: "bot-mainnet",
     chainId: 677,
     contractAddress: contractAddress ?? null,
+    consumerGatewayAddress,
     deploymentStatus: deployment.contract?.address ? "deployment_receipt_verified" : "metadata_missing",
     businessStatus: replayVerified ? "business_replay_receipts_verified" : "business_replay_not_recorded",
     anchored: replayVerified,
     replayManifest: replayVerified ? { schemaVersion: replay?.schemaVersion, runId: replay?.runId, recordedAt: replay?.recordedAt, integrityHash: replay?.integrityHash, ids: replay?.ids, events: replay?.events } : null,
     explorerUrl: deployment.explorerUrl ?? "https://scan.botchain.ai",
+    consumerGatewayExplorerUrl: deployment.consumerGateway?.explorerUrl ?? (consumerGatewayAddress ? `https://scan.botchain.ai/address/${consumerGatewayAddress}` : null),
   };
   if (!contractAddress) return { ...result, status: "not_configured" };
 
@@ -242,6 +258,9 @@ async function prepareWalletTransaction(body: Record<string, unknown>): Promise<
     throw new Error("TRUTHPASS_CONTRACT_ADDRESS does not match verified BOT Chain deployment metadata");
   }
   const contractAddress = configuredAddress || metadataAddress;
+  const gatewayAddress = typeof process.env.TRUTHPASS_CONSUMER_GATEWAY_ADDRESS === "string"
+    ? process.env.TRUTHPASS_CONSUMER_GATEWAY_ADDRESS.trim()
+    : typeof deployment.consumerGateway?.address === "string" ? deployment.consumerGateway.address : "";
   const chainId = Number(deployment.chainId ?? 0);
   const domainSeparator = typeof deployment.contract?.domainSeparator === "string"
     ? deployment.contract.domainSeparator
@@ -292,6 +311,16 @@ async function prepareWalletTransaction(body: Record<string, unknown>): Promise<
 
   if (action === "purchase") {
     const purchaseId = bytes32OrHash(body.purchaseId, "purchaseId", `purchase:${wallet}:${batchId}:${clientNonce}`);
+    if (gatewayAddress) {
+      const transaction = buildConsumerGatewayPurchaseTransaction({
+        purchaseId,
+        batchCommitment: bytes32OrHash(body.batchCommitment, "batchCommitment", `batch:${batchId}`),
+        purchaseProofHash: bytes32OrHash(body.purchaseProofHash, "purchaseProofHash", `purchase-proof:${wallet}:${batchId}:${clientNonce}`),
+        consentHash: bytes32OrHash(body.consentHash, "consentHash", `consent:${wallet}:${batchId}`),
+        gatewayAddress,
+      }, config);
+      return { schemaVersion: "truthpass.wallet.transaction.v1", action, batchId, network: "bot-mainnet", chainId, contractAddress: gatewayAddress, anchorAddress: contractAddress, explorerUrl, requiredRole: "CONSUMER_SELF_SERVICE", gateway: true, ids: { purchaseId }, transaction };
+    }
     const transaction = buildRecordPurchaseTransaction({
       purchaseId,
       consumerCommitment: bytes32OrHash(body.consumerCommitment, "consumerCommitment", `consumer:${wallet}`),
@@ -307,6 +336,17 @@ async function prepareWalletTransaction(body: Record<string, unknown>): Promise<
   if (action === "contribution") {
     const purchaseId = bytes32OrHash(body.purchaseId, "purchaseId");
     const contributionId = bytes32OrHash(body.contributionId, "contributionId", `contribution:${wallet}:${purchaseId}:${clientNonce}`);
+    if (gatewayAddress) {
+      const transaction = buildConsumerGatewayContributionTransaction({
+        contributionId,
+        purchaseId,
+        evidenceHash: bytes32OrHash(body.evidenceHash, "evidenceHash", `feedback-evidence:${wallet}:${batchId}`),
+        contributionHash: bytes32OrHash(body.contributionHash, "contributionHash", `feedback:${wallet}:${batchId}:${clientNonce}`),
+        score: Number.isInteger(body.score) ? Math.max(0, Math.min(100, Number(body.score))) : 90,
+        gatewayAddress,
+      }, config);
+      return { schemaVersion: "truthpass.wallet.transaction.v1", action, batchId, network: "bot-mainnet", chainId, contractAddress: gatewayAddress, anchorAddress: contractAddress, explorerUrl, requiredRole: "CONSUMER_SELF_SERVICE", gateway: true, ids: { contributionId, purchaseId }, transaction };
+    }
     const transaction = buildRecordContributionTransaction({
       contributionId,
       purchaseId,
@@ -323,6 +363,16 @@ async function prepareWalletTransaction(body: Record<string, unknown>): Promise<
     const targetKind = Number.isInteger(body.targetKind) ? Number(body.targetKind) : 1;
     if (![1, 2, 3, 4].includes(targetKind)) throw new Error("targetKind must be 1, 2, 3 or 4");
     const targetId = bytes32OrHash(body.targetId ?? replayIds.requestId, "targetId");
+    if (gatewayAddress) {
+      const transaction = buildConsumerGatewayDisputeTransaction({
+        disputeId: bytes32OrHash(body.disputeId, "disputeId", `dispute:${wallet}:${targetId}:${clientNonce}`),
+        targetKind: targetKind as 1 | 2 | 3 | 4,
+        targetId,
+        reasonHash: bytes32OrHash(body.reasonHash, "reasonHash", `consumer-question:${batchId}:${clientNonce}`),
+        gatewayAddress,
+      }, config);
+      return { schemaVersion: "truthpass.wallet.transaction.v1", action, batchId, network: "bot-mainnet", chainId, contractAddress: gatewayAddress, anchorAddress: contractAddress, explorerUrl, requiredRole: "CONSUMER_SELF_SERVICE", gateway: true, ids: { targetId }, transaction };
+    }
     const transaction = buildRaiseDisputeTransaction({
       disputeId: bytes32OrHash(body.disputeId, "disputeId", `dispute:${wallet}:${targetId}:${clientNonce}`),
       targetKind: targetKind as 1 | 2 | 3 | 4,
@@ -382,6 +432,11 @@ async function handleApi(url: URL, request: IncomingMessage, response: ServerRes
         walletActions: ["evidence", "verification", "purchase", "contribution", "dispute"],
       },
       chain,
+      consumerGateway: {
+        address: process.env.TRUTHPASS_CONSUMER_GATEWAY_ADDRESS ?? (await loadDeployment()).consumerGateway?.address ?? null,
+        chainId: 677,
+        actions: ["purchase", "contribution", "dispute"],
+      },
       publicDataBoundary: {
         rawReports: "off_chain",
         personalData: "off_chain",

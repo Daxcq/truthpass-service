@@ -7,6 +7,9 @@ import {
   BotChainClient,
   ChainNetworkMismatchError,
   buildRecordVerificationTransaction,
+  buildConsumerGatewayPurchaseTransaction,
+  buildConsumerGatewayContributionTransaction,
+  buildConsumerGatewayDisputeTransaction,
   buildRecordPurchaseTransaction,
   buildRecordContributionTransaction,
   buildRaiseDisputeTransaction,
@@ -16,6 +19,9 @@ import {
   RECORD_CONTRIBUTION_SELECTOR,
   RAISE_DISPUTE_SELECTOR,
   REVOKE_OR_SUPERSEDE_SELECTOR,
+  CONSUMER_GATEWAY_PURCHASE_SELECTOR,
+  CONSUMER_GATEWAY_CONTRIBUTION_SELECTOR,
+  CONSUMER_GATEWAY_DISPUTE_SELECTOR,
   encodeAnchorEvidenceCalldata,
   encodeTruthPassEvidenceAnchorCalldata,
   keccak256Hex,
@@ -120,6 +126,37 @@ test("all TruthPass lifecycle writes build the expected ABI selectors", () => {
   assert.equal(revision.data.slice(0, 10), REVOKE_OR_SUPERSEDE_SELECTOR);
   assert.equal(verification.action, "recordVerification");
   assert.equal(revision.action, "revokeOrSupersede");
+});
+
+test("consumer gateway calldata targets the public self-service gateway", () => {
+  const config = getBotChainConfig("mainnet", { contractAddress: ADDRESS });
+  const purchase = buildConsumerGatewayPurchaseTransaction({
+    purchaseId: REQUEST,
+    batchCommitment: ROOT,
+    purchaseProofHash: SCHEMA,
+    consentHash: SOURCE,
+    gatewayAddress: ADDRESS,
+  }, config);
+  const contribution = buildConsumerGatewayContributionTransaction({
+    contributionId: REQUEST,
+    purchaseId: ROOT,
+    evidenceHash: SUBJECT,
+    contributionHash: SCHEMA,
+    score: 90,
+    gatewayAddress: ADDRESS,
+  }, config);
+  const dispute = buildConsumerGatewayDisputeTransaction({
+    disputeId: REQUEST,
+    targetKind: 1,
+    targetId: ROOT,
+    reasonHash: SCHEMA,
+    gatewayAddress: ADDRESS,
+  }, config);
+  assert.equal(purchase.to, ADDRESS);
+  assert.equal(purchase.data.slice(0, 10), CONSUMER_GATEWAY_PURCHASE_SELECTOR);
+  assert.equal(contribution.data.slice(0, 10), CONSUMER_GATEWAY_CONTRIBUTION_SELECTOR);
+  assert.equal(dispute.data.slice(0, 10), CONSUMER_GATEWAY_DISPUTE_SELECTOR);
+  assert.equal(purchase.chainId, 677);
 });
 
 test("dry-run checks RPC chain and builds calldata without sending a transaction", async () => {
