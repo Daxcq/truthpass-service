@@ -1,0 +1,36 @@
+{
+  "schemaVersion": "truthpass.audit-escrow.roles.v1",
+  "status": "roles_receipt_verified",
+  "network": "bot-mainnet",
+  "chainId": 677,
+  "escrowAddress": "0x722a4291C64B5BD3ED374AD457Ba6326681C2933",
+  "deployerAddress": "0x2eBd8467735EE3534be6add92f3D7231BA693c08",
+  "singleWalletMode": false,
+  "receipts": [
+    {
+      "name": "AUDIT_AGENT_ROLE",
+      "target": "0x2eBd8467735EE3534be6add92f3D7231BA693c08",
+      "txHash": "0x1672dba75136050b7639e471cf8c95d04aa280ad64f9fa55b17bb0998161b160",
+      "status": "verified"
+    },
+    {
+      "name": "VERIFIER_ROLE",
+      "target": "0x2eBd8467735EE3534be6add92f3D7231BA693c08",
+      "txHash": "0xd9c17136a80efac45509f5dd5c2d16b7366bbdedf97ef4f3bc9f42b441388460",
+      "status": "verified"
+    },
+    {
+      "name": "ARBITER_ROLE",
+      "target": "0x2eBd8467735EE3534be6add92f3D7231BA693c08",
+      "txHash": "0x39edbb975c34ef715d8e0d61cd9c7e01842e0df5c847d030d0a1d2778abe8372",
+      "status": "verified"
+    },
+    {
+      "name": "TREASURY_ROLE",
+      "target": "0x2eBd8467735EE3534be6add92f3D7231BA693c08",
+      "txHash": "0x114c4156734870276527b93d94c0ba3cde50ca689602bfeee2490def85df2381",
+      "status": "verified"
+    }
+  ],
+  "note": "Public role metadata only. Private keys stay outside Git."
+}
