@@ -474,6 +474,114 @@ export async function handleApi(url: URL, request: IncomingMessage, response: Se
     return sendJson(response, 200, await getMainnetStatus()), true;
   }
 
+  if (request.method === "GET" && url.pathname.startsWith("/api/products/")) {
+    const segments = url.pathname.split("/").filter(Boolean);
+    const batchId = decodeURIComponent(segments[2] ?? BATCH_ID);
+    const inspection = await inspectBatch(batchId);
+    if (segments[3] === "journey") {
+      return sendJson(response, 200, {
+        batchId,
+        journey: (inspection.product as Record<string, unknown> | undefined)?.productionProcess ?? inspection.batch ?? [],
+        chain: inspection.chain,
+      }), true;
+    }
+    if (segments[3] === "evidence-link") {
+      return sendJson(response, 200, {
+        batchId,
+        evidenceHash: (inspection.quality as Record<string, unknown> | undefined)?.evidenceHash ?? (inspection.verification as Record<string, unknown> | undefined)?.evidenceHash ?? null,
+        verification: inspection.verification,
+        chain: inspection.chain,
+      }), true;
+    }
+    if (segments[3] === "metrics") {
+      return sendJson(response, 200, {
+        batchId,
+        metric: segments[4] ?? null,
+        metrics: (inspection.product as Record<string, unknown> | undefined)?.keyMetrics ?? [],
+        quality: inspection.quality,
+      }), true;
+    }
+    return sendJson(response, 200, inspection.product), true;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/verification") {
+    const batchId = url.searchParams.get("batchId") ?? BATCH_ID;
+    const inspection = await inspectBatch(batchId);
+    return sendJson(response, 200, inspection.verification), true;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/observer") {
+    const batchId = url.searchParams.get("batchId") ?? BATCH_ID;
+    const inspection = await inspectBatch(batchId);
+    return sendJson(response, 200, {
+      batchId,
+      product: inspection.product,
+      verification: inspection.verification,
+      chain: inspection.chain,
+      jev: inspection.jev,
+    }), true;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/recommend") {
+    return sendJson(response, 200, {
+      batchId: BATCH_ID,
+      recommendation: "FO-2026-001",
+      reason: "当前演示批次的质检证据、冷链记录和主网锚定回执完整。",
+    }), true;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/orders") {
+    const body = await readJson(request);
+    const batchId = typeof body.batchId === "string" ? body.batchId : BATCH_ID;
+    const quantity = Math.max(1, Number(body.quantity ?? 1));
+    return sendJson(response, 201, {
+      status: "prepared",
+      batchId,
+      quantity,
+      nextAction: "connect_wallet_and_submit_consumer_purchase",
+      gatewayAddress: (await getMainnetStatus()).consumerGatewayAddress,
+      chainId: 677,
+    }), true;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/simulator/iot") {
+    const body = await readJson(request);
+    const batchId = typeof body.batchId === "string" ? body.batchId : BATCH_ID;
+    const mode = typeof body.mode === "string" ? body.mode : "normal";
+    return sendJson(response, 200, {
+      schemaVersion: "truthpass.sensor.simulation.v1",
+      batchId,
+      mode,
+      status: mode === "offline" ? "review" : mode === "anomaly" ? "rejected" : "accepted",
+      evidenceRoot: sha256(batchId + ":iot:" + mode),
+      chainStatus: "anchor_pending",
+    }), true;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/agent/chat") {
+    const body = await readJson(request);
+    const batchId = typeof body.batchId === "string" ? body.batchId : BATCH_ID;
+    const inspection = await inspectBatch(batchId);
+    const summary = buildConsumerSummary(inspection);
+    response.writeHead(200, {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache",
+      "connection": "keep-alive",
+      "access-control-allow-origin": "*",
+    });
+    response.write(`data: ${JSON.stringify({ kind: "begin" })}
+
+`);
+    response.write(`data: ${JSON.stringify({ kind: "line", cls: "plain", text: summary })}
+
+`);
+    response.write(`data: ${JSON.stringify({ kind: "done" })}
+
+`);
+    response.end();
+    return true;
+  }
+
   if (request.method === "GET" && url.pathname === "/api/cli/inspect") {
     const batchId = url.searchParams.get("batchId") ?? BATCH_ID;
     const inspection = await inspectBatch(batchId);
