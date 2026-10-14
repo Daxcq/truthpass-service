@@ -176,6 +176,7 @@ export interface VerifiedChainTx {
 }
 
 export interface SessionChainTx {
+  id?: string;
   action: string;
   event: string;
   batchId: string;
@@ -185,6 +186,9 @@ export interface SessionChainTx {
   txHash: string;
   blockNumber?: number;
   explorerUrl: string;
+  calldata?: string;
+  signature?: string;
+  mode?: "wallet_broadcast" | "wallet_signed_relayed" | "mainnet_verified_anchor";
   createdAt: string;
 }
 

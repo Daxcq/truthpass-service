@@ -62,6 +62,9 @@ export async function confirmChainTx(params: {
   contractAddress: string;
   txHash: string;
   blockNumber?: number;
+  calldata?: string;
+  signature?: string;
+  mode?: "wallet_broadcast" | "wallet_signed_relayed" | "mainnet_verified_anchor";
 }): Promise<{ ok: boolean; transaction: SessionChainTx }> {
   const res = await fetch("/api/chain/tx-confirm", {
     method: "POST",
