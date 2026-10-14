@@ -59,6 +59,13 @@ function getWindowAny(): Record<string, any> {
 }
 
 export function discoverWalletOptions(): WalletOption[] {
+  if (typeof window !== "undefined") {
+    try {
+      window.dispatchEvent(new Event("eip6963:requestProvider"));
+    } catch {
+      // ignore
+    }
+  }
   const win = getWindowAny();
   const eth = win.ethereum as Eip1193Provider | undefined;
   const subProviders: Eip1193Provider[] = Array.isArray(eth?.providers) ? eth!.providers! : eth ? [eth] : [];
@@ -129,7 +136,7 @@ export function discoverWalletOptions(): WalletOption[] {
       subtitle: "最常用的 EVM 浏览器插件钱包 · 支持自动添加 BOT Chain (677)",
       badge: "推荐",
       detected: Boolean(metamaskProvider),
-      provider: metamaskProvider ?? eth ?? null,
+      provider: metamaskProvider,
       installUrl: "https://metamask.io/download/",
     },
     {
@@ -138,7 +145,7 @@ export function discoverWalletOptions(): WalletOption[] {
       subtitle: "欧易 Web3 多链钱包 · 支持 EIP-1193 / EIP-6963 直连",
       badge: "多链",
       detected: Boolean(okxProvider),
-      provider: okxProvider ?? eth ?? null,
+      provider: okxProvider,
       installUrl: "https://www.okx.com/web3",
     },
     {
@@ -147,7 +154,7 @@ export function discoverWalletOptions(): WalletOption[] {
       subtitle: "币安 Web3 钱包 · 支持 EVM 自定义主网签名",
       badge: "生态",
       detected: Boolean(binanceProvider),
-      provider: binanceProvider ?? eth ?? null,
+      provider: binanceProvider,
       installUrl: "https://www.binance.com/zh-CN/web3wallet",
     },
     {

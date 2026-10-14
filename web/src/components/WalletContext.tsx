@@ -113,13 +113,13 @@ export function WalletProvider({
   }, [provider]);
 
   const connectDemoWallet = useCallback(
-    (label = "BOT Chain 主网演示钱包") => {
+    (label = "BOT Chain 主网演示钱包", kind: WalletKind = "metamask") => {
       const demoAddr = "0x2eBd8467735EE3534be6add92f3D7231BA693c08";
       setProvider(null);
       setAddress(demoAddr);
       setChainId(677);
       setWalletName(label);
-      setWalletKind("injected");
+      setWalletKind(kind);
       setTxError(null);
       onToast(`已连接 ${label} (${shortHex(demoAddr)}) · BOT Chain Mainnet (677)`);
       return demoAddr;
@@ -130,13 +130,14 @@ export function WalletProvider({
   const connectWallet = useCallback(
     async (kind: WalletKind): Promise<string | null> => {
       setTxError(null);
+      setWalletKind(kind);
       const discovered = discoverWalletOptions();
       setOptions(discovered);
       const target = discovered.find((o) => o.kind === kind) ?? discovered[0];
       if (!target?.provider) {
-        const demoAddr = connectDemoWallet(`${target?.name ?? "EVM"} (主网演示模式)`);
+        const demoAddr = connectDemoWallet(`${target?.name ?? "EVM"} (主网演示模式)`, kind);
         setTxError(
-          `当前浏览器未检测到 ${target?.name ?? "EVM 钱包"} 插件，已自动为您连接「BOT Chain 677 主网演示钱包 (${shortHex(demoAddr)})」，可直接点击下方「2. 真实产品功能链上交互」按钮体验完整上链流程。`,
+          `当前浏览器未检测到 ${target?.name ?? "EVM 钱包"} 插件，已自动为您切换至「${target?.name ?? "EVM"} 主网演示模式 (${shortHex(demoAddr)})」，可直接点击下方「2. 真实产品功能链上交互」按钮体验完整上链流程。`,
         );
         return demoAddr;
       }
@@ -146,7 +147,7 @@ export function WalletProvider({
         const accounts = (await Promise.race([
           target.provider.request({ method: "eth_requestAccounts" }),
           new Promise((_, reject) =>
-            setTimeout(() => reject(new Error("钱包插件响应超时，请点击浏览器右上角钱包图标确认授权弹窗")), 12_000),
+            setTimeout(() => reject(new Error("钱包插件响应超时，请先在右上角钱包插件中完成初始化/解锁后再试")), 12_000),
           ),
         ])) as string[];
         if (!Array.isArray(accounts) || accounts.length === 0) {
@@ -183,10 +184,11 @@ export function WalletProvider({
 
         return connectedAddr;
       } catch (err: any) {
-        const message = err?.message || "连接钱包被拒绝或失败";
-        setTxError(message);
-        onToast(`钱包连接提示：${message}`);
-        return null;
+        const message = err?.message || "连接钱包被拒绝或尚未完成初始化";
+        const demoAddr = connectDemoWallet(`${target.name} (待插件授权 · 演示模式)`, kind);
+        setTxError(`${message}（已为您保持选中 ${target.name} 并挂载演示账户 ${shortHex(demoAddr)}，插件创建完成后再次点击即可切换为真实插件账户）`);
+        onToast(`钱包提示：${message}`);
+        return demoAddr;
       } finally {
         setConnecting(false);
       }
@@ -540,7 +542,7 @@ export function WalletProvider({
               </div>
               <div className="wallet-grid">
                 {options.map((opt) => {
-                  const isCurrent = address && walletKind === opt.kind;
+                  const isCurrent = walletKind === opt.kind;
                   return (
                     <button
                       key={opt.kind}
@@ -552,7 +554,13 @@ export function WalletProvider({
                       <div className="wallet-option-top">
                         <strong>{opt.name}</strong>
                         <span className={opt.detected ? "wallet-badge detected" : "wallet-badge"}>
-                          {isCurrent ? "✓ 当前已连接" : opt.detected ? "已检测到插件" : "点击连接 / 演示"}
+                          {isCurrent
+                            ? connecting
+                              ? "⏳ 正在请求授权…"
+                              : "✓ 当前已选中"
+                            : opt.detected
+                              ? "已检测到插件"
+                              : "点击连接 / 演示"}
                         </span>
                       </div>
                       <small>{opt.subtitle}</small>
@@ -570,7 +578,7 @@ export function WalletProvider({
                   <button
                     type="button"
                     className="wallet-action-ghost"
-                    onClick={() => connectDemoWallet("BOT Chain 主网演示钱包")}
+                    onClick={() => connectDemoWallet("BOT Chain 主网演示钱包", walletKind ?? "metamask")}
                   >
                     切换为主网免插件演示钱包
                   </button>
