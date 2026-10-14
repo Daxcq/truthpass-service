@@ -132,6 +132,8 @@ export interface OrderCard {
   createdAt: string;
   status: string;
   imageUrl?: string;
+  txHash?: string;
+  explorerUrl?: string;
 }
 
 export type VerifyState = "idle" | "running" | "done";
@@ -144,12 +146,113 @@ export interface JevChoiceAnswer {
 }
 
 export interface JevDetection {
-  source: "TypeSafe JEV";
-  model: string;
-  answers: {
+  source?: "TypeSafe JEV";
+  model?: string;
+  batchId?: string;
+  routeDecision?: string;
+  confidence?: number;
+  mode?: string;
+  passed?: boolean;
+  evidenceRoot?: string;
+  contractAddress?: string;
+  txHash?: string;
+  explorerUrl?: string;
+  answers?: {
     route: JevChoiceAnswer;
     evidence_scope: JevChoiceAnswer;
   };
-  usage: { input_tokens: number; output_tokens: number };
-  deterministicVerifier: { status: "accepted"; policy: string };
+  usage?: { input_tokens: number; output_tokens: number };
+  deterministicVerifier?: { status: "accepted"; policy: string };
 }
+
+export interface VerifiedChainTx {
+  event: string;
+  label: string;
+  batchId: string;
+  txHash: string;
+  blockNumber: number;
+  contractAddress: string;
+  explorerUrl: string;
+}
+
+export interface SessionChainTx {
+  action: string;
+  event: string;
+  batchId: string;
+  wallet: string;
+  providerName?: string;
+  contractAddress: string;
+  txHash: string;
+  blockNumber?: number;
+  explorerUrl: string;
+  createdAt: string;
+}
+
+export interface ChainContractMeta {
+  name: string;
+  role: string;
+  address: string;
+  deployTxHash: string;
+  blockNumber: number;
+  explorerUrl: string;
+  deployTxUrl: string;
+}
+
+export interface ChainStatusData {
+  network: string;
+  chainId: number;
+  chainIdHex: string;
+  chainName: string;
+  nativeCurrency: { name: string; symbol: string; decimals: number };
+  rpcUrl: string;
+  explorerUrl: string;
+  contractAddress: string;
+  contracts: {
+    evidenceAnchor: ChainContractMeta;
+    consumerGateway: ChainContractMeta;
+    auditEscrow: ChainContractMeta;
+  };
+  verifiedTransactions: VerifiedChainTx[];
+  liveRpc: {
+    reachable: boolean;
+    rpcChainId?: number;
+    latestBlockNumber?: number;
+    contractsDeployed?: {
+      evidenceAnchor: boolean;
+      consumerGateway: boolean;
+      auditEscrow: boolean;
+    };
+    checkedAt: string;
+    error?: string;
+  };
+  sessionTransactions: SessionChainTx[];
+}
+
+export type WalletActionKind = "purchase" | "contribution" | "dispute" | "evidence" | "verification";
+
+export interface WalletPrepareResponse {
+  ok: boolean;
+  action: WalletActionKind;
+  description: string;
+  event: string;
+  batchId: string;
+  contractName: string;
+  contractAddress: string;
+  txRequest: {
+    to: string;
+    data: string;
+    value: string;
+    chainId: number;
+    chainIdHex: string;
+  };
+  meta: Record<string, unknown>;
+  network: {
+    chainId: number;
+    chainIdHex: string;
+    chainName: string;
+    nativeCurrency: { name: string; symbol: string; decimals: number };
+    rpcUrls: string[];
+    blockExplorerUrls: string[];
+  };
+}
+

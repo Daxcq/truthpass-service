@@ -10,6 +10,7 @@ import { ObserverDrawer } from "./components/ObserverDrawer";
 import { ProductPanel } from "./components/ProductPanel";
 import { ReportSection } from "./components/ReportSection";
 import { TopBar } from "./components/TopBar";
+import { WalletProvider } from "./components/WalletContext";
 import { useAuth } from "./hooks/useAuth";
 import { fetchProduct, fetchVerification } from "./api";
 import { saveVerificationRecord } from "./lib/supabase";
@@ -30,7 +31,7 @@ export default function App() {
   const showToast = (msg: string) => {
     setToast(msg);
     window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToast(null), 2400);
+    toastTimer.current = window.setTimeout(() => setToast(null), 3200);
   };
 
   const handleDone = () => {
@@ -81,47 +82,49 @@ export default function App() {
 
   return (
     <ModalProvider>
-      <div className="bg-scene" aria-hidden="true">
-        <div className="bg-rays" />
-        <div className="bg-fish" />
-        <div className="bg-depth" />
-      </div>
-      <TopBar
-        onOpenObserver={() => setObserverOpen(true)}
-        onOpenEvidence={() => {
-          if (!batchId) setBatchId("FO-2026-001");
-          setVerifyState("done");
-          setFocusTech(true);
-          setTimeout(() => {
-            document.getElementById("evidence")?.scrollIntoView({ behavior: "smooth", block: "start" });
-          }, 150);
-        }}
-        userEmail={user?.email ?? null}
-        onOpenAuth={() => setAuthOpen(true)}
-        onOpenHistory={() => setHistoryOpen(true)}
-        onSignOut={signOut}
-      />
-      <Hero />
-      <main className={inQueryMode ? "layout" : "assistant-only"}>
-        <ChatPanel
-          onStart={() => setVerifyState("running")}
-          onDone={handleDone}
-          onBatch={(id) => setBatchId(id)}
-          batchId={batchId}
-        />
-        {inQueryMode && <ProductPanel state={verifyState} batchId={batchId ?? ""} />}
-        {inQueryMode && <EvidencePanel state={verifyState} batchId={batchId ?? "FO-2026-001"} focusTech={focusTech} />}
-      </main>
-      {inQueryMode && <ReportSection batchId={batchId} />}
-      {inQueryMode && <Community onToast={showToast} batchId={batchId} />}
-      <ObserverDrawer open={observerOpen} onClose={() => setObserverOpen(false)} batchId={batchId} />
-      <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} onAuth={handleAuth} />
-      <HistoryModal open={historyOpen} onClose={() => setHistoryOpen(false)} />
-      {toast && (
-        <div className="toast" role="status">
-          {toast}
+      <WalletProvider activeBatchId={batchId} onToast={showToast}>
+        <div className="bg-scene" aria-hidden="true">
+          <div className="bg-rays" />
+          <div className="bg-fish" />
+          <div className="bg-depth" />
         </div>
-      )}
+        <TopBar
+          onOpenObserver={() => setObserverOpen(true)}
+          onOpenEvidence={() => {
+            if (!batchId) setBatchId("FO-2026-001");
+            setVerifyState("done");
+            setFocusTech(true);
+            setTimeout(() => {
+              document.getElementById("evidence")?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }, 150);
+          }}
+          userEmail={user?.email ?? null}
+          onOpenAuth={() => setAuthOpen(true)}
+          onOpenHistory={() => setHistoryOpen(true)}
+          onSignOut={signOut}
+        />
+        <Hero />
+        <main className={inQueryMode ? "layout" : "assistant-only"}>
+          <ChatPanel
+            onStart={() => setVerifyState("running")}
+            onDone={handleDone}
+            onBatch={(id) => setBatchId(id)}
+            batchId={batchId}
+          />
+          {inQueryMode && <ProductPanel state={verifyState} batchId={batchId ?? ""} />}
+          {inQueryMode && <EvidencePanel state={verifyState} batchId={batchId ?? "FO-2026-001"} focusTech={focusTech} />}
+        </main>
+        {inQueryMode && <ReportSection batchId={batchId} />}
+        {inQueryMode && <Community onToast={showToast} batchId={batchId} />}
+        <ObserverDrawer open={observerOpen} onClose={() => setObserverOpen(false)} batchId={batchId} />
+        <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} onAuth={handleAuth} />
+        <HistoryModal open={historyOpen} onClose={() => setHistoryOpen(false)} />
+        {toast && (
+          <div className="toast" role="status">
+            {toast}
+          </div>
+        )}
+      </WalletProvider>
     </ModalProvider>
   );
 }

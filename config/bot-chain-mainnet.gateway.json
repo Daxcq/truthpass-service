@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "truthpass.consumer-gateway-deployment.v1",
+  "network": "bot-mainnet",
+  "chainId": 677,
+  "anchorAddress": "0x0033462bee153cb9DF12b5c447b9C282DbfbE877",
+  "deployerAddress": "0x2eBd8467735EE3534be6add92f3D7231BA693c08",
+  "rpcUrl": "https://rpc.botchain.ai",
+  "explorerUrl": "https://scan.botchain.ai",
+  "estimatedGas": "531249",
+  "gasPriceWei": "20000000000",
+  "status": "deployed_receipt_verified",
+  "consumerGateway": {
+    "address": "0x5192484B107E51EADFda4DBF4c9fFa41C03453F1",
+    "deploymentTxHash": "0x9585f9cb8766b539f6289be7db8fa4a4f980535f9818c81423e24f3bd2281180",
+    "deploymentBlockNumber": 26438022,
+    "explorerUrl": "https://scan.botchain.ai/address/0x5192484B107E51EADFda4DBF4c9fFa41C03453F1"
+  }
+}

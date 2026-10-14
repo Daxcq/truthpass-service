@@ -9,3 +9,7 @@ dist/
 coverage/
 .playwright-mcp/
 .spec-workflow/
+.mimosa/
+certs/
+src/.audit-probe.ts
+

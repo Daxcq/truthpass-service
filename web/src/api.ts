@@ -7,6 +7,12 @@ import type {
   JevDetection,
   RecommendItem,
   OrderCard,
+  ChainStatusData,
+  WalletActionKind,
+  WalletPrepareResponse,
+  VerifiedChainTx,
+  SessionChainTx,
+  ChainContractMeta,
 } from "./types";
 
 export const BATCH_ID = "FO-2026-001";
@@ -22,7 +28,49 @@ export const fetchEvidenceLink = (batchId: string) => getJson<EvidenceStep[]>(`/
 export const fetchJourney = (batchId: string) => getJson<Journey>(`/api/products/${batchId}/journey`);
 export const fetchMetricDetail = (batchId: string, key: string) =>
   getJson<MetricDetail>(`/api/products/${batchId}/metrics/${key}`);
-export const fetchJevDetection = () => getJson<JevDetection>("/api/jev/detection");
+export const fetchJevDetection = (batchId?: string) =>
+  getJson<JevDetection>(batchId ? `/api/jev/detection?batchId=${encodeURIComponent(batchId)}` : "/api/jev/detection");
+
+export const fetchChainStatus = () => getJson<ChainStatusData>("/api/chain/status");
+
+export async function prepareWalletTx(params: {
+  action: WalletActionKind;
+  batchId: string;
+  wallet?: string;
+  purchaseId?: string;
+  points?: number;
+  reason?: string;
+}): Promise<WalletPrepareResponse> {
+  const res = await fetch("/api/wallet/prepare", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+  return (await res.json()) as WalletPrepareResponse;
+}
+
+export async function confirmChainTx(params: {
+  action: string;
+  event: string;
+  batchId: string;
+  wallet: string;
+  providerName?: string;
+  contractAddress: string;
+  txHash: string;
+  blockNumber?: number;
+}): Promise<{ ok: boolean; transaction: SessionChainTx }> {
+  const res = await fetch("/api/chain/tx-confirm", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as { ok: boolean; transaction: SessionChainTx };
+}
 
 export const fetchRecommend = () => getJson<RecommendItem[]>("/api/recommend");
 
@@ -41,7 +89,36 @@ export interface CliInspectData {
   command: "inspect";
   batchId: string;
   stages: Array<{ name: string; status: "completed" | "pending"; detail: string }>;
-  verification: { status: string; dataClass: string; policy: { id: string; version: string }; evidenceRoot: string; evidence: Array<{ evidenceId: string; kind: string; sourceKind: string; status: string; dataMode: string }>; assessment?: { score: number; checks: Record<string, boolean>; reasons: string[] }; anchor: { status: string; submitted: false; network?: string; chainId?: number; contractAddress?: string }; reasons: string[] };
+  verification: {
+    status: string;
+    dataClass: string;
+    policy: { id: string; version: string };
+    evidenceRoot: string;
+    evidence: Array<{ evidenceId: string; kind: string; sourceKind: string; status: string; dataMode: string }>;
+    assessment?: { score: number; checks: Record<string, boolean>; reasons: string[] };
+    anchor: {
+      status: string;
+      submitted: boolean;
+      network?: string;
+      chainId?: number;
+      contractAddress?: string;
+      txHash?: string;
+      verificationTxHash?: string;
+      explorerUrl?: string;
+    };
+    reasons: string[];
+  };
+  chain?: {
+    chainId: number;
+    chainName: string;
+    explorerUrl: string;
+    contracts: {
+      evidenceAnchor: ChainContractMeta;
+      consumerGateway: ChainContractMeta;
+      auditEscrow: ChainContractMeta;
+    };
+    verifiedTransactions: VerifiedChainTx[];
+  };
 }
 
 export const fetchCliInspect = (batchId: string) => getJson<CliInspectData>(`/api/cli/inspect?batchId=${encodeURIComponent(batchId)}`);
@@ -101,6 +178,13 @@ export interface ObserverData {
   jev: string;
   evidenceRoot: string;
   chainStatus: string;
+  chainId?: number;
+  contractAddress?: string;
+  consumerGatewayAddress?: string;
+  auditEscrowAddress?: string;
+  explorerUrl?: string;
+  verifiedTransactions?: VerifiedChainTx[];
+  sessionTransactions?: SessionChainTx[];
   services: ObserverServiceView[];
 }
 
@@ -113,14 +197,28 @@ export async function postFeedback(
   consent: boolean,
   purchaseConfirmed: boolean,
   comment?: string,
-): Promise<{ ok: boolean; persisted: boolean; contributionPoints: number; evidenceHash: string }> {
+): Promise<{
+  ok: boolean;
+  persisted: boolean;
+  feedbackId?: string;
+  purchaseId?: string;
+  contributionPoints: number;
+  evidenceHash: string;
+}> {
   const res = await fetch("/api/feedback", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ batchId, rating, categories, consent, purchaseConfirmed, comment }),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return (await res.json()) as { ok: boolean; persisted: boolean; contributionPoints: number; evidenceHash: string };
+  return (await res.json()) as {
+    ok: boolean;
+    persisted: boolean;
+    feedbackId?: string;
+    purchaseId?: string;
+    contributionPoints: number;
+    evidenceHash: string;
+  };
 }
 
 export interface VerificationRule {
@@ -152,3 +250,4 @@ export interface VerificationData {
 }
 
 export const fetchVerification = (batchId: string) => getJson<VerificationData>(`/api/verification?batchId=${batchId}`);
+

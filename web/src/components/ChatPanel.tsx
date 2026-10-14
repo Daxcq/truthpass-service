@@ -2,7 +2,9 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useChatStream, type ChatMessage } from "../hooks/useChatStream";
 import { createOrder, fetchRecommend, postIotSimulation, type IotSimulationMode } from "../api";
 import { saveOrderRecord } from "../lib/supabase";
-import type { ChatLine, RecommendItem } from "../types";
+import { useWallet } from "./WalletContext";
+import { shortHex } from "../lib/wallet";
+import type { ChatLine, OrderCard, RecommendItem } from "../types";
 
 const FISH_OIL_BATCHES = [
   { id: "FO-2026-001", name: "深海鱼油软胶囊" },
@@ -22,11 +24,6 @@ const QUICK_PROMPTS = [
   { label: "签名状态", q: "检测报告的签名能核验吗？" },
   { label: "能买吗", q: "这批现在能放心买吗？" },
   { label: "数据来源", q: "这些证据来自谁？" },
-];
-
-const CHAT_SUGGESTIONS = [
-  { label: "问证据缺口", value: "这批还缺什么证据？" },
-  { label: "问签名状态", value: "检测报告的签名能核验吗？" },
 ];
 
 function extractBatchId(text: string): string | null {
@@ -55,7 +52,17 @@ function LineView({ line }: { line: ChatLine }) {
   }
 }
 
-function MessageView({ message, onOrder }: { message: ChatMessage; onOrder: (item: RecommendItem) => void }) {
+function MessageView({
+  message,
+  onOrder,
+  onAnchorOrder,
+  txBusy,
+}: {
+  message: ChatMessage;
+  onOrder: (item: RecommendItem) => void;
+  onAnchorOrder: (order: OrderCard) => void;
+  txBusy: boolean;
+}) {
   if (message.role === "user") {
     return (
       <div className="msg user">
@@ -94,7 +101,26 @@ function MessageView({ message, onOrder }: { message: ChatMessage; onOrder: (ite
             <div className="order-info">
               <b>补货已生成 · {message.order.orderId}</b>
               <span>{message.order.productName} · {message.order.batchId} · 数量 {message.order.quantity}</span>
-              <span className="order-status">状态：已确认</span>
+              <span className="order-status">状态：{message.order.txHash ? "已链上锚定 (BOT Chain 677)" : "已确认"}</span>
+              {message.order.txHash ? (
+                <a
+                  href={message.order.explorerUrl ?? `https://scan.botchain.ai/tx/${message.order.txHash}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="order-chain-link"
+                >
+                  ✓ BOT Chain 交易 {shortHex(message.order.txHash, 10, 6)} · 区块浏览器核验 ↗
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  className="order-anchor-btn"
+                  disabled={txBusy}
+                  onClick={() => onAnchorOrder(message.order!)}
+                >
+                  {txBusy ? "钱包签名上链中…" : "⛓️ 钱包签名上链存证 (BOT Chain 677)"}
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -116,6 +142,7 @@ export function ChatPanel({
   batchId: string | null;
 }) {
   const { messages, ask, pushUser, pushAgent } = useChatStream();
+  const { executeOnChainAction, txBusy } = useWallet();
   const [input, setInput] = useState("");
   const [batchOpen, setBatchOpen] = useState(false);
   const [listening, setListening] = useState(false);
@@ -177,13 +204,32 @@ export function ChatPanel({
       });
       pushAgent(
         [
-          { cls: "conclusion", text: `已为你补货：${order.orderId}` },
-          { cls: "disclaimer", text: "此为 demo 模拟补货，不产生真实交易。" },
+          { cls: "conclusion", text: `已为你生成补货单：${order.orderId}` },
+          { cls: "plain", text: "可点击下方按钮通过 MetaMask / OKX / Binance 钱包在 BOT Chain Mainnet (677) 锚定购买凭证。" },
         ],
         { order },
       );
     } catch {
       pushAgent([{ cls: "disclaimer", text: "补货失败，请稍后重试。" }]);
+    }
+  };
+
+  const handleAnchorOrder = async (order: OrderCard) => {
+    try {
+      const tx = await executeOnChainAction({
+        action: "purchase",
+        batchId: order.batchId,
+        purchaseId: order.orderId,
+      });
+      pushAgent(
+        [
+          { cls: "conclusion", text: `订单 ${order.orderId} 已完成 BOT Chain Mainnet (677) 链上存证！` },
+          { cls: "cmd", text: `TxHash: ${tx.txHash}` },
+        ],
+        { order: { ...order, txHash: tx.txHash, explorerUrl: tx.explorerUrl } },
+      );
+    } catch {
+      // Error handled by WalletProvider toast
     }
   };
 
@@ -263,7 +309,13 @@ export function ChatPanel({
           </div>
         </div>
         {messages.map((message) => (
-          <MessageView key={message.id} message={message} onOrder={handleOrder} />
+          <MessageView
+            key={message.id}
+            message={message}
+            onOrder={handleOrder}
+            onAnchorOrder={handleAnchorOrder}
+            txBusy={txBusy}
+          />
         ))}
       </div>
 

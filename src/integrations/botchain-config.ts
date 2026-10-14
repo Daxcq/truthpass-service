@@ -1,19 +1,125 @@
+export interface BotChainContractMetadata {
+  name: string;
+  role: string;
+  address: string;
+  deploymentTxHash: string;
+  deploymentBlockNumber: number;
+  explorerAddressUrl: string;
+  explorerTxUrl: string;
+}
+
+export interface BotChainVerifiedTx {
+  key: string;
+  event: string;
+  label: string;
+  contractName: string;
+  contractAddress: string;
+  txHash: string;
+  blockNumber: number;
+  explorerUrl: string;
+}
+
 export interface BotChainReadOnlyConfig {
   network: "bot-mainnet";
   chainId: 677;
+  chainIdHex: "0x2a5";
   rpcUrl: string;
   explorerUrl: string;
   contractAddress: string;
+  consumerGatewayAddress: string;
+  auditEscrowAddress: string;
+  deployerAddress: string;
   domainSeparator: string;
+  contracts: {
+    evidenceAnchor: BotChainContractMetadata;
+    consumerGateway: BotChainContractMetadata;
+    auditEscrow: BotChainContractMetadata;
+  };
+  verifiedTransactions: BotChainVerifiedTx[];
 }
 
 export const BOT_CHAIN_MAINNET: BotChainReadOnlyConfig = Object.freeze({
   network: "bot-mainnet",
   chainId: 677,
+  chainIdHex: "0x2a5",
   rpcUrl: "https://rpc.botchain.ai",
   explorerUrl: "https://scan.botchain.ai",
   contractAddress: "0x0033462bee153cb9DF12b5c447b9C282DbfbE877",
+  consumerGatewayAddress: "0x5192484B107E51EADFda4DBF4c9fFa41C03453F1",
+  auditEscrowAddress: "0x722a4291C64B5BD3ED374AD457Ba6326681C2933",
+  deployerAddress: "0x2eBd8467735EE3534be6add92f3D7231BA693c08",
   domainSeparator: "0xb0843104b533c579fb232c23f6c5a3d900ec0e507e85dec8d99be2cba9a2a8eb",
+  contracts: {
+    evidenceAnchor: {
+      name: "TruthPassEvidenceAnchor",
+      role: "核心证据锚定与生命周期状态机合约",
+      address: "0x0033462bee153cb9DF12b5c447b9C282DbfbE877",
+      deploymentTxHash: "0xbc9bfe2b4a78fbf95d7795a5a67f14402cb9b8e0c6cf406d7ab39be3a65442b6",
+      deploymentBlockNumber: 25861690,
+      explorerAddressUrl: "https://scan.botchain.ai/address/0x0033462bee153cb9DF12b5c447b9C282DbfbE877",
+      explorerTxUrl: "https://scan.botchain.ai/tx/0xbc9bfe2b4a78fbf95d7795a5a67f14402cb9b8e0c6cf406d7ab39be3a65442b6",
+    },
+    consumerGateway: {
+      name: "TruthPassConsumerGateway",
+      role: "消费者自助购买存证、质量共建与争议网关合约",
+      address: "0x5192484B107E51EADFda4DBF4c9fFa41C03453F1",
+      deploymentTxHash: "0x9585f9cb8766b539f6289be7db8fa4a4f980535f9818c81423e24f3bd2281180",
+      deploymentBlockNumber: 26438022,
+      explorerAddressUrl: "https://scan.botchain.ai/address/0x5192484B107E51EADFda4DBF4c9fFa41C03453F1",
+      explorerTxUrl: "https://scan.botchain.ai/tx/0x9585f9cb8766b539f6289be7db8fa4a4f980535f9818c81423e24f3bd2281180",
+    },
+    auditEscrow: {
+      name: "TruthPassAuditEscrow",
+      role: "审计质押、争议挑战与罚没托管合约",
+      address: "0x722a4291C64B5BD3ED374AD457Ba6326681C2933",
+      deploymentTxHash: "0xc9f08364e8adbd0e2d5c30ce0a8e9f4f427792650eb5f845f0f83df84f1a5b2c",
+      deploymentBlockNumber: 26438083,
+      explorerAddressUrl: "https://scan.botchain.ai/address/0x722a4291C64B5BD3ED374AD457Ba6326681C2933",
+      explorerTxUrl: "https://scan.botchain.ai/tx/0xc9f08364e8adbd0e2d5c30ce0a8e9f4f427792650eb5f845f0f83df84f1a5b2c",
+    },
+  },
+  verifiedTransactions: [
+    {
+      key: "evidence",
+      event: "EvidenceAnchored",
+      label: "多源证据根哈希链上锚定",
+      contractName: "TruthPassEvidenceAnchor",
+      contractAddress: "0x0033462bee153cb9DF12b5c447b9C282DbfbE877",
+      txHash: "0x3ff591a82f012eb05f9f6994aff2af0415c718097587654ebfe4f5c3382b4052",
+      blockNumber: 25873873,
+      explorerUrl: "https://scan.botchain.ai/tx/0x3ff591a82f012eb05f9f6994aff2af0415c718097587654ebfe4f5c3382b4052",
+    },
+    {
+      key: "verification",
+      event: "VerificationRecorded",
+      label: "确定性规则验收结论上链",
+      contractName: "TruthPassEvidenceAnchor",
+      contractAddress: "0x0033462bee153cb9DF12b5c447b9C282DbfbE877",
+      txHash: "0x30736a25b354536354b0c7f318a47ed271a0ced6ebc5f4d201bc5990c2377144",
+      blockNumber: 25873892,
+      explorerUrl: "https://scan.botchain.ai/tx/0x30736a25b354536354b0c7f318a47ed271a0ced6ebc5f4d201bc5990c2377144",
+    },
+    {
+      key: "purchase",
+      event: "PurchaseRecorded",
+      label: "消费者购买凭证承诺上链",
+      contractName: "TruthPassEvidenceAnchor",
+      contractAddress: "0x0033462bee153cb9DF12b5c447b9C282DbfbE877",
+      txHash: "0xad9ce28b3942b6f4257a2d0ee3bb74ce692916fa9d3ac782c2d2d875e7db6aca",
+      blockNumber: 25873910,
+      explorerUrl: "https://scan.botchain.ai/tx/0xad9ce28b3942b6f4257a2d0ee3bb74ce692916fa9d3ac782c2d2d875e7db6aca",
+    },
+    {
+      key: "contribution",
+      event: "ContributionRecorded",
+      label: "消费者质量反馈与共建积分上链",
+      contractName: "TruthPassEvidenceAnchor",
+      contractAddress: "0x0033462bee153cb9DF12b5c447b9C282DbfbE877",
+      txHash: "0x3514623a2b24374ed8a4589a387745fbb15c4945e641daef52ffa1c7b5d89a8d",
+      blockNumber: 25873923,
+      explorerUrl: "https://scan.botchain.ai/tx/0x3514623a2b24374ed8a4589a387745fbb15c4945e641daef52ffa1c7b5d89a8d",
+    },
+  ],
 });
 
 export interface BotChainRpcResult {
