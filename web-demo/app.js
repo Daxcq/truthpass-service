@@ -5,6 +5,7 @@ const state = {
   wallet: null,
   purchaseId: null,
   lastWalletTx: null,
+  walletPending: false,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -45,8 +46,8 @@ function renderWalletState(snapshot) {
   const short = `${snapshot.account.slice(0, 6)}…${snapshot.account.slice(-4)}`;
   if (status) status.textContent = `${snapshot.provider} · ${short} · Chain ${snapshot.chainIdNumber}`;
   connectButtons.forEach((button) => { button.textContent = `${snapshot.provider} ${short}`; });
-  actionButtons.forEach((button) => { button.disabled = false; });
-  if (contributionButton) contributionButton.disabled = !state.purchaseId;
+  actionButtons.forEach((button) => { button.disabled = state.walletPending; });
+  if (contributionButton) contributionButton.disabled = state.walletPending || !state.purchaseId;
 }
 
 function renderWalletTx(result, action) {
@@ -76,43 +77,53 @@ async function connectWallet() {
 }
 
 async function executeWalletAction(action) {
-  if (!state.wallet?.connected) {
-    await connectWallet();
-    if (!state.wallet?.connected) return;
+  if (state.walletPending) {
+    toast("已有一笔钱包请求等待处理，请先在 MetaMask 中完成或拒绝");
+    return;
   }
-  const body = {
-    action,
-    wallet: state.wallet.account,
-    batchId: "FO-2026-001",
-    clientNonce: `${action}-${window.crypto?.randomUUID?.() ?? Date.now()}`,
-  };
-  if (action === "contribution") {
-    if (!state.purchaseId) {
-      toast("请先完成购买登记，再提交消费者反馈");
-      return;
-    }
-    body.purchaseId = state.purchaseId;
-    body.score = 90;
-  }
-  const response = await fetch("/api/wallet/prepare", {
-    method: "POST",
-    headers: { "content-type": "application/json", Accept: "application/json" },
-    body: JSON.stringify(body),
-  });
-  const prepared = await response.json();
-  if (!response.ok) throw new Error(prepared.message ?? `钱包交易准备失败 HTTP ${response.status}`);
-  toast(`${action} 已准备，等待钱包确认 ${prepared.requiredRole}`);
-  const result = await window.TruthPassWallet.sendPreparedTransaction(prepared.transaction, {
-    action,
-    target: prepared.contractAddress,
-    anchorAddress: prepared.anchorAddress,
-  });
-  state.lastWalletTx = result;
-  if (action === "purchase") state.purchaseId = prepared.ids.purchaseId;
-  state.wallet = await window.TruthPassWallet.state();
+  state.walletPending = true;
   renderWalletState(state.wallet);
-  renderWalletTx(result, action);
-  toast(`${action} 已写入 BOT Chain`);
+  try {
+    if (!state.wallet?.connected) {
+      await connectWallet();
+      if (!state.wallet?.connected) return;
+    }
+    const body = {
+      action,
+      wallet: state.wallet.account,
+      batchId: "FO-2026-001",
+      clientNonce: `${action}-${window.crypto?.randomUUID?.() ?? Date.now()}`,
+    };
+    if (action === "contribution") {
+      if (!state.purchaseId) {
+        toast("请先完成购买登记，再提交消费者反馈");
+        return;
+      }
+      body.purchaseId = state.purchaseId;
+      body.score = 90;
+    }
+    const response = await fetch("/api/wallet/prepare", {
+      method: "POST",
+      headers: { "content-type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(body),
+    });
+    const prepared = await response.json();
+    if (!response.ok) throw new Error(prepared.message ?? `钱包交易准备失败 HTTP ${response.status}`);
+    toast(`${action} 已准备，等待钱包确认 ${prepared.requiredRole}`);
+    const result = await window.TruthPassWallet.sendPreparedTransaction(prepared.transaction, {
+      action,
+      target: prepared.contractAddress,
+      anchorAddress: prepared.anchorAddress,
+    });
+    state.lastWalletTx = result;
+    if (action === "purchase") state.purchaseId = prepared.ids.purchaseId;
+    state.wallet = await window.TruthPassWallet.state();
+    renderWalletTx(result, action);
+    toast(`${action} 已写入 BOT Chain`);
+  } finally {
+    state.walletPending = false;
+    renderWalletState(state.wallet);
+  }
 }
 
 async function runVerification() {

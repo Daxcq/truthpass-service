@@ -22,6 +22,7 @@ import { loadLocalEnv } from "./jev/http-provider.js";
 
 const PROJECT_ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const WEB_ROOT = join(PROJECT_ROOT, "web-demo");
+const FRONTEND_ROOT = join(PROJECT_ROOT, "web-frontend", "dist");
 const DEPLOYMENT_FILE = join(PROJECT_ROOT, "config", "bot-chain-mainnet.deployed.json");
 const GATEWAY_FILE = join(PROJECT_ROOT, "config", "bot-chain-mainnet.gateway.json");
 const REPLAY_FILE = join(PROJECT_ROOT, "config", "bot-chain-mainnet.replay.json");
@@ -387,7 +388,7 @@ async function prepareWalletTransaction(body: Record<string, unknown>): Promise<
   throw new Error(`unsupported wallet action: ${action}`);
 }
 
-async function handleApi(url: URL, request: IncomingMessage, response: ServerResponse): Promise<boolean> {
+export async function handleApi(url: URL, request: IncomingMessage, response: ServerResponse): Promise<boolean> {
   if (request.method === "OPTIONS" && url.pathname.startsWith("/api/")) {
     response.writeHead(204, {
       "access-control-allow-origin": "*",
@@ -564,25 +565,47 @@ async function handleApi(url: URL, request: IncomingMessage, response: ServerRes
 }
 
 async function serveStatic(url: URL, response: ServerResponse): Promise<void> {
-  const webPath = url.pathname === "/web-demo"
-    ? "/"
-    : url.pathname.startsWith("/web-demo/")
-      ? url.pathname.slice("/web-demo".length)
-      : url.pathname;
+  const pathname = url.pathname;
+  const isDemo = pathname === "/web-demo" || pathname.startsWith("/web-demo/");
+  const isFrontend = pathname === "/" || pathname === "/frontend" || pathname.startsWith("/frontend/") || pathname === "/assets" || pathname.startsWith("/assets/");
+  if (!isDemo && !isFrontend) {
+    response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+    response.end("not found");
+    return;
+  }
+
+  const root = isDemo ? WEB_ROOT : FRONTEND_ROOT;
+  const prefix = isDemo ? "/web-demo" : pathname === "/frontend" || pathname.startsWith("/frontend/") ? "/frontend" : "";
+  const webPath = prefix
+    ? pathname === prefix ? "/" : pathname.slice(prefix.length)
+    : pathname;
   const relative = decodeURIComponent(webPath === "/" ? "/index.html" : webPath).replace(/^\/+/, "");
-  const filePath = resolve(WEB_ROOT, relative);
-  if (filePath !== WEB_ROOT && !filePath.startsWith(`${WEB_ROOT}${sep}`)) {
+  const filePath = resolve(root, relative);
+  let content: Buffer;
+  if (filePath !== root && !filePath.startsWith(`${root}${sep}`)) {
     response.writeHead(403);
     response.end("forbidden");
     return;
   }
+
   try {
-    const content = await readFile(filePath);
+    content = await readFile(filePath);
     response.writeHead(200, { "content-type": MIME_TYPES[extname(filePath)] ?? "application/octet-stream", "cache-control": "no-store" });
     response.end(content);
   } catch {
-    response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
-    response.end("not found");
+    if (!isFrontend) {
+      response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+      response.end("not found");
+      return;
+    }
+    try {
+      content = await readFile(join(root, "index.html"));
+      response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+      response.end(content);
+    } catch {
+      response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+      response.end("frontend not built");
+    }
   }
 }
 
