@@ -6,12 +6,17 @@ export interface BotChainContractMetadata {
   deploymentBlockNumber: number;
   explorerAddressUrl: string;
   explorerTxUrl: string;
+  deployTxHash: string;
+  blockNumber: number;
+  explorerUrl: string;
+  deployTxUrl: string;
 }
 
 export interface BotChainVerifiedTx {
   key: string;
   event: string;
   label: string;
+  batchId: string;
   contractName: string;
   contractAddress: string;
   txHash: string;
@@ -58,6 +63,10 @@ export const BOT_CHAIN_MAINNET: BotChainReadOnlyConfig = Object.freeze({
       deploymentBlockNumber: 25861690,
       explorerAddressUrl: "https://scan.botchain.ai/address/0x0033462bee153cb9DF12b5c447b9C282DbfbE877",
       explorerTxUrl: "https://scan.botchain.ai/tx/0xbc9bfe2b4a78fbf95d7795a5a67f14402cb9b8e0c6cf406d7ab39be3a65442b6",
+      deployTxHash: "0xbc9bfe2b4a78fbf95d7795a5a67f14402cb9b8e0c6cf406d7ab39be3a65442b6",
+      blockNumber: 25861690,
+      explorerUrl: "https://scan.botchain.ai/address/0x0033462bee153cb9DF12b5c447b9C282DbfbE877",
+      deployTxUrl: "https://scan.botchain.ai/tx/0xbc9bfe2b4a78fbf95d7795a5a67f14402cb9b8e0c6cf406d7ab39be3a65442b6",
     },
     consumerGateway: {
       name: "TruthPassConsumerGateway",
@@ -67,6 +76,10 @@ export const BOT_CHAIN_MAINNET: BotChainReadOnlyConfig = Object.freeze({
       deploymentBlockNumber: 26438022,
       explorerAddressUrl: "https://scan.botchain.ai/address/0x5192484B107E51EADFda4DBF4c9fFa41C03453F1",
       explorerTxUrl: "https://scan.botchain.ai/tx/0x9585f9cb8766b539f6289be7db8fa4a4f980535f9818c81423e24f3bd2281180",
+      deployTxHash: "0x9585f9cb8766b539f6289be7db8fa4a4f980535f9818c81423e24f3bd2281180",
+      blockNumber: 26438022,
+      explorerUrl: "https://scan.botchain.ai/address/0x5192484B107E51EADFda4DBF4c9fFa41C03453F1",
+      deployTxUrl: "https://scan.botchain.ai/tx/0x9585f9cb8766b539f6289be7db8fa4a4f980535f9818c81423e24f3bd2281180",
     },
     auditEscrow: {
       name: "TruthPassAuditEscrow",
@@ -76,6 +89,10 @@ export const BOT_CHAIN_MAINNET: BotChainReadOnlyConfig = Object.freeze({
       deploymentBlockNumber: 26438083,
       explorerAddressUrl: "https://scan.botchain.ai/address/0x722a4291C64B5BD3ED374AD457Ba6326681C2933",
       explorerTxUrl: "https://scan.botchain.ai/tx/0xc9f08364e8adbd0e2d5c30ce0a8e9f4f427792650eb5f845f0f83df84f1a5b2c",
+      deployTxHash: "0xc9f08364e8adbd0e2d5c30ce0a8e9f4f427792650eb5f845f0f83df84f1a5b2c",
+      blockNumber: 26438083,
+      explorerUrl: "https://scan.botchain.ai/address/0x722a4291C64B5BD3ED374AD457Ba6326681C2933",
+      deployTxUrl: "https://scan.botchain.ai/tx/0xc9f08364e8adbd0e2d5c30ce0a8e9f4f427792650eb5f845f0f83df84f1a5b2c",
     },
   },
   verifiedTransactions: [
@@ -83,6 +100,7 @@ export const BOT_CHAIN_MAINNET: BotChainReadOnlyConfig = Object.freeze({
       key: "evidence",
       event: "EvidenceAnchored",
       label: "多源证据根哈希链上锚定",
+      batchId: "FO-2026-001",
       contractName: "TruthPassEvidenceAnchor",
       contractAddress: "0x0033462bee153cb9DF12b5c447b9C282DbfbE877",
       txHash: "0x3ff591a82f012eb05f9f6994aff2af0415c718097587654ebfe4f5c3382b4052",
@@ -93,6 +111,7 @@ export const BOT_CHAIN_MAINNET: BotChainReadOnlyConfig = Object.freeze({
       key: "verification",
       event: "VerificationRecorded",
       label: "确定性规则验收结论上链",
+      batchId: "FO-2026-001",
       contractName: "TruthPassEvidenceAnchor",
       contractAddress: "0x0033462bee153cb9DF12b5c447b9C282DbfbE877",
       txHash: "0x30736a25b354536354b0c7f318a47ed271a0ced6ebc5f4d201bc5990c2377144",
@@ -103,6 +122,7 @@ export const BOT_CHAIN_MAINNET: BotChainReadOnlyConfig = Object.freeze({
       key: "purchase",
       event: "PurchaseRecorded",
       label: "消费者购买凭证承诺上链",
+      batchId: "FO-2026-001",
       contractName: "TruthPassEvidenceAnchor",
       contractAddress: "0x0033462bee153cb9DF12b5c447b9C282DbfbE877",
       txHash: "0xad9ce28b3942b6f4257a2d0ee3bb74ce692916fa9d3ac782c2d2d875e7db6aca",
@@ -113,6 +133,7 @@ export const BOT_CHAIN_MAINNET: BotChainReadOnlyConfig = Object.freeze({
       key: "contribution",
       event: "ContributionRecorded",
       label: "消费者质量反馈与共建积分上链",
+      batchId: "FO-2026-001",
       contractName: "TruthPassEvidenceAnchor",
       contractAddress: "0x0033462bee153cb9DF12b5c447b9C282DbfbE877",
       txHash: "0x3514623a2b24374ed8a4589a387745fbb15c4945e641daef52ffa1c7b5d89a8d",
