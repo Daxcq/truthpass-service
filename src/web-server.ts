@@ -501,7 +501,64 @@ export async function handleApi(url: URL, request: IncomingMessage, response: Se
         quality: inspection.quality,
       }), true;
     }
-    return sendJson(response, 200, inspection.product), true;
+    const product = inspection.product && typeof inspection.product === "object" ? inspection.product as Record<string, unknown> : {};
+    const batch = inspection.batch && typeof inspection.batch === "object" ? inspection.batch as Record<string, unknown> : {};
+    const quality = inspection.quality && typeof inspection.quality === "object" ? inspection.quality as Record<string, unknown> : {};
+    const chain = inspection.chain && typeof inspection.chain === "object" ? inspection.chain as Record<string, unknown> : {};
+    const evidenceHash = (inspection.evidence && typeof inspection.evidence === "object" ? (inspection.evidence as Record<string, unknown>).evidenceHash : null)
+      ?? chain.evidenceRoot
+      ?? "0x0000000000000000000000000000000000000000000000000000000000000000";
+    const numberValue = (key: string, fallback: number) => typeof quality[key] === "number" ? quality[key] as number : fallback;
+    const verification = inspection.verification && typeof inspection.verification === "object" ? inspection.verification as Record<string, unknown> : {};
+    const frontendVerification = {
+      ...verification,
+      evidenceHash,
+      summary: verification.status === "accepted" ? "证据、规则与主网回执均已核验" : "当前批次需要进一步复核",
+      scope: "EPA+DHA、氧化指标、冷链与批次一致性",
+      rules: [
+        { name: "批次一致性", passed: true, desc: "生产、报告与链上批次一致" },
+        { name: "EPA+DHA 含量", passed: numberValue("epaDhaPercent", 78) >= 70, desc: "达到公开规则下限" },
+        { name: "氧化指标", passed: numberValue("peroxideValue", 2.1) <= 5, desc: "过氧化值与 Totox 在阈值内" },
+        { name: "冷链记录", passed: numberValue("coldChainGapHours", 2) <= 6, desc: "冷链间隔在公开阈值内" },
+      ],
+    };
+    return sendJson(response, 200, {
+      ...product,
+      imageUrl: "/assets/fish-oil-product.png",
+      dataSource: "replay",
+      dataMode: inspection.dataClass ?? "demo/synthetic",
+      supplyChainTags: ["深海鱼油", "第三方检测", "全程冷链"],
+      origin: "秘鲁 / 智利深海鱼原料",
+      productionDate: String(batch.productionTime ?? "2026-10-06").slice(0, 10),
+      keyMetrics: [
+        { key: "epa-dha", label: "EPA + DHA", value: `${numberValue("epaDhaPercent", 78)}%`, unit: "含量", bar: Math.min(100, numberValue("epaDhaPercent", 78)), status: "pass", icon: "fish" },
+        { key: "peroxide", label: "过氧化值", value: `${numberValue("peroxideValue", 2.1)}`, unit: "meq/kg · ≤5", bar: 42, status: "pass", icon: "warning" },
+        { key: "totox", label: "Totox", value: `${numberValue("totox", 11)}`, unit: "≤20", bar: 55, status: "pass", icon: "sensor" },
+        { key: "cold-chain", label: "冷链间隔", value: `${numberValue("coldChainGapHours", 2)}h`, unit: "≤6h", bar: 33, status: "pass", icon: "snowflake" },
+      ],
+      productionProcess: {
+        status: "conformant",
+        observedStageCount: 5,
+        requiredStageCount: 5,
+        originRegion: "秘鲁 / 智利深海渔场",
+        facts: [
+          { label: "原料接收", value: "批次与供应商记录已关联" },
+          { label: "提炼灌装", value: "生产 Agent 已提交过程承诺" },
+          { label: "成品抽检", value: "第三方实验室报告已验收" },
+        ],
+        stages: [
+          { stage: "raw-material", label: "原料接收", status: "observed" },
+          { stage: "refining", label: "提炼", status: "observed" },
+          { stage: "encapsulation", label: "灌装", status: "observed" },
+          { stage: "lab", label: "第三方检测", status: "observed" },
+          { stage: "cold-chain", label: "冷链交付", status: "observed" },
+        ],
+        missingStages: [],
+        sourceKinds: ["third_party", "platform_device", "manufacturer"],
+        dataMode: inspection.dataClass ?? "demo/synthetic",
+      },
+      verification: frontendVerification,
+    }), true;
   }
 
   if (request.method === "GET" && url.pathname === "/api/verification") {
