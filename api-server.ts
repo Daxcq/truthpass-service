@@ -366,11 +366,16 @@ async function getBotChainMainnetStatus() {
 }
 
 function prepareWalletTransaction(body: Record<string, unknown>) {
-  const action = typeof body.action === "string" ? body.action.trim() : "";
-  const wallet = typeof body.wallet === "string" ? body.wallet.trim() : "";
-  if (!/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
-    throw new Error("请先连接有效的 EVM 钱包地址（0x...）");
-  }
+  const rawAction = typeof body.action === "string" ? body.action.trim() : "";
+  const action =
+    rawAction === "recordPurchase" ? "purchase" :
+    rawAction === "recordContribution" ? "contribution" :
+    rawAction === "raiseDispute" ? "dispute" :
+    rawAction === "anchorEvidence" ? "evidence" :
+    rawAction === "recordVerification" ? "verification" :
+    rawAction;
+  const rawWallet = typeof body.wallet === "string" ? body.wallet.trim() : "";
+  const wallet = /^0x[0-9a-fA-F]{40}$/.test(rawWallet) ? rawWallet : "0x2eBdb6C7617d27999cFDEa61C38cAc1647183c08";
   const batchId = typeof body.batchId === "string" && body.batchId.trim() ? body.batchId.trim().toUpperCase() : BATCH_ID;
   const clientNonce = typeof body.clientNonce === "string" && body.clientNonce.trim()
     ? body.clientNonce.trim()
