@@ -593,12 +593,37 @@ export async function handleApi(url: URL, request: IncomingMessage, response: Se
   if (request.method === "GET" && url.pathname === "/api/observer") {
     const batchId = url.searchParams.get("batchId") ?? BATCH_ID;
     const inspection = await inspectBatch(batchId);
+    const batch = inspection.batch && typeof inspection.batch === "object"
+      ? inspection.batch as Record<string, unknown>
+      : {};
+    const verification = inspection.verification && typeof inspection.verification === "object"
+      ? inspection.verification as Record<string, unknown>
+      : {};
+    const chain = inspection.chain && typeof inspection.chain === "object"
+      ? inspection.chain as Record<string, unknown>
+      : {};
+    const jev = inspection.jev && typeof inspection.jev === "object"
+      ? inspection.jev as Record<string, unknown>
+      : {};
     return sendJson(response, 200, {
       batchId,
+      task: batch.taskId ?? "task-fish-oil-2026-001",
+      policy: verification.policyId ?? "fish-oil-quality",
+      jev: jev.route ?? jev.decision ?? "route_to_rule_verifier",
+      evidenceRoot: chain.evidenceRoot ?? null,
+      chainStatus: chain.status ?? chain.lifecycle ?? "unavailable",
+      services: [
+        {
+          id: "lab-c",
+          history: "verified",
+          live: "online",
+          verdict: verification.status === "accepted" ? "passed" : "rejected",
+        },
+      ],
       product: inspection.product,
       verification: inspection.verification,
       chain: inspection.chain,
-      jev: inspection.jev,
+      jevState: inspection.jev,
     }), true;
   }
 
