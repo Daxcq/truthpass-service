@@ -1,0 +1,6 @@
+{
+  "private": true,
+  "scripts": {
+    "build": "node -e \"console.log('TruthPass prebuilt frontend: no compile step required')\""
+  }
+}
