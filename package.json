@@ -26,7 +26,8 @@
     "web:server": "tsx src/web-server.ts",
     "replay:bot-chain": "node scripts/replay-bot-chain.mjs",
     "demo:real-sourced": "tsx src/real-sourced-demo.ts",
-    "demo:fish-oil-e2e": "tsx src/fish-oil-order-to-delivery-demo.ts"
+    "demo:fish-oil-e2e": "tsx src/fish-oil-order-to-delivery-demo.ts",
+    "simulate:sensor-protocol": "node scripts/simulate-sensor-protocol.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
